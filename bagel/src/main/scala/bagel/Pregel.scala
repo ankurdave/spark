@@ -6,9 +6,6 @@ import scala.collection.mutable.HashMap
 import scala.collection.mutable.ArrayBuffer
 
 object Pregel extends Logging {
-  implicit def RDDExtensions[T](self: RDD[T]) = new RDDExtensions(self)
-  implicit def PairRDDExtensions[K, V, W](self: RDD[(K, Either[V, W])]) = new PairRDDExtensions(self)
-
   /**
    * Runs a Pregel job on the given vertices, running the specified
    * compute function on each vertex in every superstep. Before
