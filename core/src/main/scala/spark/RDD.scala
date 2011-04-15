@@ -415,4 +415,34 @@ extends RDD[Pair[T, U]](sc) {
   def numCores = self.sparkContext.numCores
 
   def collectAsMap(): Map[K, V] = HashMap(self.collect(): _*)
+
+  def groupWith[W](other: RDD[(K, W)]): RDD[(K, (Seq[V], Seq[W]))] = {
+    val vs: RDD[(K, Either[V, W])] = self.map { case (k, v) => (k, Left(v)) }
+    val ws: RDD[(K, Either[V, W])] = other.map { case (k, w) => (k, Right(w)) }
+    (vs ++ ws).groupByKey(numCores).map {
+      case (k, seq) => {
+        val vbuf = new ArrayBuffer[V]
+        val wbuf = new ArrayBuffer[W]
+        seq.foreach(_ match {
+          case Left(v) => vbuf += v
+          case Right(w) => wbuf += w
+        })
+        (k, (vbuf.toList, wbuf.toList))
+      }
+    }
+  }
+
+  def mapValues[U](f: V => U): RDD[(K, U)] = {
+    self.map {
+      case (k, v) =>
+        (k, f(v))
+    }
+  }
+
+  def flatMapValues[U](f: V => Traversable[U]): RDD[(K, U)] = {
+    self.flatMap {
+      case (k, v) =>
+        f(v).map(u => (k, u))
+    }
+  }
 }
