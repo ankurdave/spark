@@ -67,7 +67,7 @@ object ShortestPath {
 
         (new SPVertex(self.id, newValue, self.outEdges, false), outbox)
     }
-    val result = Pregel.run(sc, vertices, messages, MinCombiner)(numSplits)(compute)
+    val result = Pregel.run(sc, vertices, messages)(combiner = MinCombiner, numSplits = numSplits)(compute)
 
     // Print the result
     System.err.println("Shortest path from "+startVertex+" to all vertices:")

@@ -7,24 +7,24 @@ import scala.collection.mutable.ArrayBuffer
 
 object Pregel extends Logging {
   implicit def addAggregatorArg[
-    V <: Vertex : Manifest, M <: Message : Manifest, C, A
+    V <: Vertex : Manifest, M <: Message : Manifest, C
   ](
     compute: (V, Option[C], Int) => (V, Iterable[M])
   ): (V, Option[C], Option[Nothing], Int) => (V, Iterable[M]) = {
-    (vert: V, messages: Option[C], aggregator: Option[A], superstep: Int) => compute(vert, messages, superstep)
+    (vert: V, messages: Option[C], aggregator: Option[Nothing], superstep: Int) => compute(vert, messages, superstep)
   }
 
   def run[V <: Vertex : Manifest, M <: Message : Manifest, C : Manifest, A : Manifest](
     sc: SparkContext,
     verts: RDD[(String, V)],
-    msgs: RDD[(String, M)],
-    combiner: Combiner[M, C] = new DefaultCombiner[M],
-    aggregator: Option[Aggregator[V, A]] = None,
-    superstep: Int = 0
+    msgs: RDD[(String, M)]
   )(
+    combiner: Combiner[M, C] = new DefaultCombiner[M],
+    aggregator: Aggregator[V, A] = new NullAggregator[V],
+    superstep: Int = 0,
     numSplits: Int = sc.numCores
   )(
-    compute: (V, Option[C], Option[A], Int) => (V, Iterable[M])
+    compute: (V, Option[C], A, Int) => (V, Iterable[M])
   ): RDD[V] = {
 
     logInfo("Starting superstep "+superstep+".")
@@ -47,17 +47,17 @@ object Pregel extends Logging {
       val newMsgs = processed.flatMap {
         case (id, (vert, msgs)) => msgs.map(m => (m.targetId, m))
       }
-      run(sc, newVerts, newMsgs, combiner, aggregator, numSplits)(superstep + 1)(compute)
+      run(sc, newVerts, newMsgs)(combiner, aggregator, superstep + 1, numSplits)(compute)
     }
   }
 
-  def agg[V <: Vertex, A : Manifest](verts: RDD[(String, V)], aggregator: Option[Aggregator[V, A]]): Option[A] = aggregator match {
-    case Some(agg) =>
-      Some(verts.map {
-        case (id, vert) => agg.createAggregator(vert)
-      }.reduce(agg.mergeAggregators(_, _)))
-    case None =>
+  def agg[V <: Vertex, A : Manifest](verts: RDD[(String, V)], aggregator: Aggregator[V, A]): A = aggregator match {
+    case _: NullAggregator[_] =>
       None
+    case _ =>
+      verts.map {
+        case (id, vert) => aggregator.createAggregator(vert)
+      }.reduce(aggregator.mergeAggregators(_, _))
   }
 
   def comp[V <: Vertex, M <: Message, C](sc: SparkContext, grouped: RDD[(String, (Seq[V], Seq[C]))], compute: (V, Option[C]) => (V, Iterable[M])): (RDD[(String, (V, Iterable[M]))], Int, Int) = {
@@ -98,13 +98,20 @@ trait Aggregator[V, A] {
   def mergeAggregators(a: A, b: A): A
 }
 
-@serializable class DefaultCombiner[M] extends Combiner[M, ArrayBuffer[M]] {
+@serializable
+class DefaultCombiner[M] extends Combiner[M, ArrayBuffer[M]] {
   def createCombiner(msg: M): ArrayBuffer[M] =
     ArrayBuffer(msg)
   def mergeMsg(combiner: ArrayBuffer[M], msg: M): ArrayBuffer[M] =
     combiner += msg
   def mergeCombiners(a: ArrayBuffer[M], b: ArrayBuffer[M]): ArrayBuffer[M] =
     a ++= b
+}
+
+@serializable
+class NullAggregator[V] extends Aggregator[V, Option[Nothing]] {
+  def createAggregator(vert: V): Option[Nothing] = None
+  def mergeAggregators(a: Option[Nothing], b: Option[Nothing]): Option[Nothing] = None
 }
 
 /**
