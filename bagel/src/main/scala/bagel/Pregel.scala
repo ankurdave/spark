@@ -6,14 +6,6 @@ import spark.SparkContext._
 import scala.collection.mutable.ArrayBuffer
 
 object Pregel extends Logging {
-  implicit def addAggregatorArg[
-    V <: Vertex : Manifest, M <: Message : Manifest, C
-  ](
-    compute: (V, Option[C], Int) => (V, Iterable[M])
-  ): (V, Option[C], Option[Nothing], Int) => (V, Iterable[M]) = {
-    (vert: V, messages: Option[C], aggregator: Option[Nothing], superstep: Int) => compute(vert, messages, superstep)
-  }
-
   def run[V <: Vertex : Manifest, M <: Message : Manifest, C : Manifest, A : Manifest](
     sc: SparkContext,
     verts: RDD[(String, V)],
@@ -51,6 +43,10 @@ object Pregel extends Logging {
     }
   }
 
+  /**
+   * Aggregates the given vertices using the given aggregator, or does
+   * nothing if it is a NullAggregator.
+   */
   def agg[V <: Vertex, A : Manifest](verts: RDD[(String, V)], aggregator: Aggregator[V, A]): A = aggregator match {
     case _: NullAggregator[_] =>
       None
@@ -60,6 +56,11 @@ object Pregel extends Logging {
       }.reduce(aggregator.mergeAggregators(_, _))
   }
 
+  /**
+   * Processes the given vertex-message RDD using the compute
+   * function. Returns the processed RDD, the number of messages
+   * created, and the number of active vertices.
+   */
   def comp[V <: Vertex, M <: Message, C](sc: SparkContext, grouped: RDD[(String, (Seq[V], Seq[C]))], compute: (V, Option[C]) => (V, Iterable[M])): (RDD[(String, (V, Iterable[M]))], Int, Int) = {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
@@ -83,6 +84,18 @@ object Pregel extends Logging {
     processed.foreach(x => {})
 
     (processed, numMsgs.value, numActiveVerts.value)
+  }
+
+  /**
+   * Converts a compute function that doesn't take an aggregator to
+   * one that does, so it can be passed to Pregel.run.
+   */
+  implicit def addAggregatorArg[
+    V <: Vertex : Manifest, M <: Message : Manifest, C
+  ](
+    compute: (V, Option[C], Int) => (V, Iterable[M])
+  ): (V, Option[C], Option[Nothing], Int) => (V, Iterable[M]) = {
+    (vert: V, messages: Option[C], aggregator: Option[Nothing], superstep: Int) => compute(vert, messages, superstep)
   }
 }
 

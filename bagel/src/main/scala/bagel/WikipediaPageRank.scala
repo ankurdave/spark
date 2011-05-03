@@ -57,7 +57,7 @@ object WikipediaPageRank {
     val messages = sc.parallelize(List[(String, PRMessage)]())
     val result =
       if (noCombiner) {
-        Pregel.run(sc, vertices, messages)(numSplits = numSplits)(PRNoCombiner.compute(numVertices, epsilon)) 
+        Pregel.run(sc, vertices, messages)(numSplits = numSplits)(PRNoCombiner.compute(numVertices, epsilon))
       } else {
         Pregel.run(sc, vertices, messages)(combiner = PRCombiner, numSplits = numSplits)(PRCombiner.compute(numVertices, epsilon))
       }
