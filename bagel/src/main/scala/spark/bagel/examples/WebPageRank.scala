@@ -52,7 +52,7 @@ object WebPageRank {
     val epsilon = 0.01 / numVertices
     val messages = sc.parallelize(List[(String, PRMessage)]())
     val result =
-      if (noCombiner) {
+      if (!useCombiner) {
         Bagel.run(sc, vertices, messages)(numSplits = numSplits)(PRNoCombiner.compute(numVertices, epsilon))
       } else {
         Bagel.run(sc, vertices, messages)(combiner = PRCombiner, numSplits = numSplits)(PRCombiner.compute(numVertices, epsilon))
