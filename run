@@ -59,6 +59,9 @@ for jar in `find $REPL_DIR/lib -name '*jar'`; do
   CLASSPATH+=:$jar
 done
 CLASSPATH+=:$BAGEL_DIR/target/scala-$SCALA_VERSION/classes
+for jar in `find $BAGEL_DIR/lib -name '*.jar'`; do
+  CLASSPATH+=:$jar
+done
 export CLASSPATH # Needed for spark-shell
 
 if [ -n "$SCALA_HOME" ]; then
