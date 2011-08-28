@@ -51,7 +51,7 @@ class PRCombiner[A] extends Combiner[PRMessage[A], Double] with Serializable {
     a + b
 }
 
-@serializable class PRVertex[A]() extends Vertex[A] {
+class PRVertex[A]() extends Vertex[A] with Serializable {
   var id: A = _
   var value: Double = _
   var outEdges: ArrayBuffer[PREdge[A]] = _
@@ -73,7 +73,7 @@ class PRCombiner[A] extends Combiner[PRMessage[A], Double] with Serializable {
   }
 }
 
-@serializable class PRMessage[A]() extends Message[A] {
+class PRMessage[A]() extends Message[A] with Serializable {
   var targetId: A = _
   var value: Double = _
 
@@ -84,7 +84,7 @@ class PRCombiner[A] extends Combiner[PRMessage[A], Double] with Serializable {
   }
 }
 
-@serializable class PREdge[A]() extends Edge[A] {
+class PREdge[A]() extends Edge[A] with Serializable {
   var targetId: A = _
 
   def this(targetId: A) {
