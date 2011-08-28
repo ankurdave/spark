@@ -6,24 +6,23 @@ import spark.SparkContext._
 import scala.collection.mutable.ArrayBuffer
 
 object Bagel extends Logging {
-  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C : Manifest, A : Manifest](
+  def runWithAggregator[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C : Manifest, A : Manifest](
     sc: SparkContext,
     verts: RDD[(I, V)],
-    msgs: RDD[(I, M)]
-  )(
+    msgs: RDD[(I, M)],
+    aggregator: Option[Aggregator[V, A]],
+    compute: (V, Option[C], Option[A], Int) => (V, Iterable[M]),
     combiner: Combiner[M, C] = new DefaultCombiner[M],
-    aggregator: Aggregator[V, A] = new NullAggregator[V],
     superstep: Int = 0,
-    numSplits: Int = sc.defaultParallelism
-  )(
-    compute: (V, Option[C], A, Int) => (V, Iterable[M])
+    numSplits: Int = 0
   ): RDD[V] = {
+    val splits = if (numSplits != 0) numSplits else sc.defaultParallelism
 
     logInfo("Starting superstep "+superstep+".")
     val startTime = System.currentTimeMillis
 
     val aggregated = agg(verts, aggregator)
-    val combinedMsgs = msgs.combineByKey(combiner.createCombiner, combiner.mergeMsg, combiner.mergeCombiners, numSplits)
+    val combinedMsgs = msgs.combineByKey(combiner.createCombiner, combiner.mergeMsg, combiner.mergeCombiners, splits)
     println("partitioner: " + combinedMsgs.partitioner)
     val grouped = verts.groupWith(combinedMsgs)
     val (processed, numMsgs, numActiveVerts) = comp[I, V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
@@ -40,21 +39,32 @@ object Bagel extends Logging {
       val newMsgs = processed.flatMap {
         case (id, (vert, msgs)) => msgs.map(m => (m.targetId, m))
       }
-      run(sc, newVerts, newMsgs)(combiner, aggregator, superstep + 1, numSplits)(compute)
+      runWithAggregator[I, V, M, C, A](sc, newVerts, newMsgs, aggregator, compute, combiner, superstep + 1, splits)
     }
   }
 
+  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C : Manifest](
+    sc: SparkContext,
+    verts: RDD[(I, V)],
+    msgs: RDD[(I, M)],
+    compute: (V, Option[C], Int) => (V, Iterable[M]),
+    combiner: Combiner[M, C] = new DefaultCombiner[M],
+    superstep: Int = 0,
+    numSplits: Int = 0
+  ): RDD[V] = {
+    runWithAggregator[I, V, M, C, Nothing](sc, verts, msgs, None, addAggregatorArg(compute), combiner, superstep, numSplits)
+  }
+
   /**
-   * Aggregates the given vertices using the given aggregator, or does
-   * nothing if it is a NullAggregator.
+   * Aggregates the given vertices using the given aggregator, if it
+   * is specified.
    */
-  def agg[I, V <: Vertex[I], A : Manifest](verts: RDD[(I, V)], aggregator: Aggregator[V, A]): A = aggregator match {
-    case _: NullAggregator[_] =>
-      None
-    case _ =>
-      verts.map {
-        case (id, vert) => aggregator.createAggregator(vert)
-      }.reduce(aggregator.mergeAggregators(_, _))
+  def agg[I, V <: Vertex[I], A : Manifest](verts: RDD[(I, V)], aggregator: Option[Aggregator[V, A]]): Option[A] = aggregator match {
+    case Some(a) =>
+      Some(verts.map {
+        case (id, vert) => a.createAggregator(vert)
+      }.reduce(a.mergeAggregators(_, _)))
+    case None => None
   }
 
   /**
@@ -119,11 +129,6 @@ class DefaultCombiner[M] extends Combiner[M, ArrayBuffer[M]] with Serializable {
     combiner += msg
   def mergeCombiners(a: ArrayBuffer[M], b: ArrayBuffer[M]): ArrayBuffer[M] =
     a ++= b
-}
-
-class NullAggregator[V] extends Aggregator[V, Option[Nothing]] with Serializable {
-  def createAggregator(vert: V): Option[Nothing] = None
-  def mergeAggregators(a: Option[Nothing], b: Option[Nothing]): Option[Nothing] = None
 }
 
 /**

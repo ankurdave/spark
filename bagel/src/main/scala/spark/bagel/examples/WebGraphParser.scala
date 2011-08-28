@@ -81,7 +81,7 @@ object WebGraphParser {
   def getNodePartition(i: Int, list: ObjectList[MutableString]): Int = {
     val url = list.get(i).toString()
     val host = new URL(url).getHost()
-    println("Vertex %d has host %s".format(i, host))
+//    println("Vertex %d has host %s".format(i, host))
     host.hashCode()
   }
 }
