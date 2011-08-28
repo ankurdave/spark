@@ -51,21 +51,24 @@ object WebPageRank {
     val util = new PageRankUtils[Int]
     val result =
       if (!useCombiner) {
-        Bagel.run[Int, PRVertex[Int], PRMessage[Int], ArrayBuffer[PRMessage[Int]]](
-          sc, vertices, messages,
-          util.computeNoCombiner(numVertices, epsilon),
-          numSplits = numSplits)
+        Bagel.run(
+          sc, vertices, messages, numSplits = numSplits)(
+          util.computeNoCombiner(numVertices, epsilon))
       } else {
         Bagel.run(
-          sc, vertices, messages,
-          util.computeWithCombiner(numVertices, epsilon),
-          combiner = new PRCombiner[Int](), numSplits = numSplits)
+          sc, vertices, messages, combiner = new PRCombiner[Int](),
+          numSplits = numSplits)(
+          util.computeWithCombiner(numVertices, epsilon))
       }
 
     // Print the result
     System.err.println("Pages with PageRank >= " + threshold + ":")
-    val top = result.filter(_.value >= threshold).map(vertex =>
-      "%s\t%s\n".format(vertex.id, vertex.value)).collect.mkString
+    val top =
+      (result
+       .filter { case (id, vert) => vert.value >= threshold }
+       .map { case (id, vert) =>
+         "%s\t%s\n".format(id, vert.value) }
+       .collect.mkString)
     println(top)
   }
 }

@@ -6,62 +6,86 @@ import spark.SparkContext._
 import scala.collection.mutable.ArrayBuffer
 
 object Bagel extends Logging {
-  def runWithAggregator[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C : Manifest, A : Manifest](
+  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest,
+          C : Manifest, A : Manifest](
     sc: SparkContext,
-    verts: RDD[(I, V)],
-    msgs: RDD[(I, M)],
+    vertices: RDD[(I, V)],
+    messages: RDD[(I, M)],
+    combiner: Combiner[M, C],
     aggregator: Option[Aggregator[V, A]],
-    compute: (V, Option[C], Option[A], Int) => (V, Iterable[M]),
-    combiner: Combiner[M, C] = new DefaultCombiner[M],
-    superstep: Int = 0,
-    numSplits: Int = 0
-  ): RDD[V] = {
+    numSplits: Int
+  )(
+    compute: (V, Option[C], Option[A], Int) => (V, Iterable[M])
+  ): RDD[(I, V)] = {
     val splits = if (numSplits != 0) numSplits else sc.defaultParallelism
 
-    logInfo("Starting superstep "+superstep+".")
-    val startTime = System.currentTimeMillis
+    var superstep = 0
+    var verts = vertices
+    var msgs = messages
+    var noActivity = false
+    do {
+      logInfo("Starting superstep "+superstep+".")
+      val startTime = System.currentTimeMillis
 
-    val aggregated = agg(verts, aggregator)
-    val combinedMsgs = msgs.combineByKey(combiner.createCombiner, combiner.mergeMsg, combiner.mergeCombiners, splits)
-    println("partitioner: " + combinedMsgs.partitioner)
-    val grouped = verts.groupWith(combinedMsgs)
-    val (processed, numMsgs, numActiveVerts) = comp[I, V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
+      val aggregated = agg(verts, aggregator)
+      val combinedMsgs = msgs.combineByKey(
+        combiner.createCombiner, combiner.mergeMsg, combiner.mergeCombiners,
+        splits)
+      println("partitioner: " + combinedMsgs.partitioner)
+      val grouped = verts.groupWith(combinedMsgs)
+      val (processed, numMsgs, numActiveVerts) =
+        comp[I, V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
 
-    val timeTaken = System.currentTimeMillis - startTime
-    logInfo("Superstep %d took %d s".format(superstep, timeTaken / 1000))
+      val timeTaken = System.currentTimeMillis - startTime
+      logInfo("Superstep %d took %d s".format(superstep, timeTaken / 1000))
 
-    // Check stopping condition and iterate
-    val noActivity = numMsgs == 0 && numActiveVerts == 0
-    if (noActivity) {
-      processed.map { case (id, (vert, msgs)) => vert }
-    } else {
-      val newVerts = processed.mapValues { case (vert, msgs) => vert }
-      val newMsgs = processed.flatMap {
+      verts = processed.mapValues { case (vert, msgs) => vert }
+      msgs = processed.flatMap {
         case (id, (vert, msgs)) => msgs.map(m => (m.targetId, m))
       }
-      runWithAggregator[I, V, M, C, A](sc, newVerts, newMsgs, aggregator, compute, combiner, superstep + 1, splits)
-    }
+      superstep += 1
+
+      noActivity = numMsgs == 0 && numActiveVerts == 0
+    } while (!noActivity)
+
+    verts
   }
 
-  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C : Manifest](
+  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest,
+          C : Manifest](
     sc: SparkContext,
-    verts: RDD[(I, V)],
-    msgs: RDD[(I, M)],
-    compute: (V, Option[C], Int) => (V, Iterable[M]),
-    combiner: Combiner[M, C] = new DefaultCombiner[M],
-    superstep: Int = 0,
-    numSplits: Int = 0
-  ): RDD[V] = {
-    runWithAggregator[I, V, M, C, Nothing](
-      sc, verts, msgs, None, addAggregatorArg[I, V, M, C](compute), combiner,
-      superstep, numSplits)
+    vertices: RDD[(I, V)],
+    messages: RDD[(I, M)],
+    combiner: Combiner[M, C],
+    numSplits: Int
+  )(
+    compute: (V, Option[C], Int) => (V, Iterable[M])
+  ): RDD[(I, V)] = {
+    run[I, V, M, C, Nothing](sc, vertices, messages, combiner, None, numSplits)(
+      addAggregatorArg[I, V, M, C](compute))
+  }
+
+  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest](
+    sc: SparkContext,
+    vertices: RDD[(I, V)],
+    messages: RDD[(I, M)],
+    numSplits: Int
+  )(
+    compute: (V, Option[ArrayBuffer[M]], Int) => (V, Iterable[M])
+  ): RDD[(I, V)] = {
+    run[I, V, M, ArrayBuffer[M], Nothing](
+      sc, vertices, messages, new DefaultCombiner(), None, numSplits)(
+      addAggregatorArg[I, V, M, ArrayBuffer[M]](compute))
   }
 
   /**
    * Aggregates the given vertices using the given aggregator, if it
    * is specified.
    */
-  def agg[I, V <: Vertex[I], A : Manifest](verts: RDD[(I, V)], aggregator: Option[Aggregator[V, A]]): Option[A] = aggregator match {
+  private def agg[I, V <: Vertex[I], A : Manifest](
+    verts: RDD[(I, V)],
+    aggregator: Option[Aggregator[V, A]]
+  ): Option[A] = aggregator match {
     case Some(a) =>
       Some(verts.map {
         case (id, vert) => a.createAggregator(vert)
@@ -74,7 +98,11 @@ object Bagel extends Logging {
    * function. Returns the processed RDD, the number of messages
    * created, and the number of active vertices.
    */
-  def comp[I : Manifest, V <: Vertex[I], M <: Message[I], C](sc: SparkContext, grouped: RDD[(I, (Seq[V], Seq[C]))], compute: (V, Option[C]) => (V, Iterable[M])): (RDD[(I, (V, Iterable[M]))], Int, Int) = {
+  private def comp[I : Manifest, V <: Vertex[I], M <: Message[I], C](
+    sc: SparkContext,
+    grouped: RDD[(I, (Seq[V], Seq[C]))],
+    compute: (V, Option[C]) => (V, Iterable[M])
+  ): (RDD[(I, (V, Iterable[M]))], Int, Int) = {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
     val processed = grouped.flatMapValues {
@@ -103,16 +131,16 @@ object Bagel extends Logging {
    * Converts a compute function that doesn't take an aggregator to
    * one that does, so it can be passed to Bagel.run.
    */
-  implicit def addAggregatorArg[
+  private def addAggregatorArg[
     I, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C
   ](
     compute: (V, Option[C], Int) => (V, Iterable[M])
   ): (V, Option[C], Option[Nothing], Int) => (V, Iterable[M]) = {
-    (vert: V, messages: Option[C], aggregator: Option[Nothing], superstep: Int) => compute(vert, messages, superstep)
+    (vert: V, msgs: Option[C], aggregated: Option[Nothing], superstep: Int) =>
+      compute(vert, msgs, superstep)
   }
 }
 
-// TODO: Simplify Combiner interface and make it more OO.
 trait Combiner[M, C] {
   def createCombiner(msg: M): C
   def mergeMsg(combiner: C, msg: M): C
