@@ -12,7 +12,7 @@ import scala.xml.{XML,NodeSeq}
 import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
 
 import com.esotericsoftware.kryo._
-
+/*
 object WikipediaPageRank {
   def main(args: Array[String]) {
     if (args.length < 4) {
@@ -38,7 +38,7 @@ object WikipediaPageRank {
     println("Done counting vertices.")
 
     println("Parsing input file...")
-    val vertices: RDD[(String, PRVertex)] = input.map(line => {
+    val vertices: RDD[(String, PRVertex[String])] = input.map(line => {
       val fields = line.split("\t")
       val (title, body) = (fields(1), fields(3).replace("\\n", "\n"))
       val links =
@@ -54,18 +54,18 @@ object WikipediaPageRank {
           }
       val outEdges = ArrayBuffer(links.map(link => new PREdge(new String(link.text))): _*)
       val id = new String(title)
-      (id, new PRVertex(id, 1.0 / numVertices, outEdges, true))
+      (id, new PRVertex(id, 1.0 / numVertices, outEdges))
     }).cache
     println("Done parsing input file.")
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(List[(String, PRMessage)]())
+    val messages = sc.parallelize(List[(String, PRMessage[String])]())
     val result =
       if (noCombiner) {
-        Bagel.run(sc, vertices, messages)(numSplits = numSplits)(PRNoCombiner.compute(numVertices, epsilon))
+        Bagel.run(sc, vertices, messages)(numSplits = numSplits)(new PRNoCombiner().compute(numVertices, epsilon))
       } else {
-        Bagel.run(sc, vertices, messages)(combiner = PRCombiner, numSplits = numSplits)(PRCombiner.compute(numVertices, epsilon))
+        Bagel.run(sc, vertices, messages)(combiner = new PRCombiner(), numSplits = numSplits)(PRCombiner.compute(numVertices, epsilon))
       }
 
     // Print the result
@@ -75,16 +75,16 @@ object WikipediaPageRank {
     println(top)
   }
 }
-
-object PRCombiner extends Combiner[PRMessage, Double] with Serializable {
-  def createCombiner(msg: PRMessage): Double =
+*/
+class PRCombiner[A] extends Combiner[PRMessage[A], Double] with Serializable {
+  def createCombiner(msg: PRMessage[A]): Double =
     msg.value
-  def mergeMsg(combiner: Double, msg: PRMessage): Double =
+  def mergeMsg(combiner: Double, msg: PRMessage[A]): Double =
     combiner + msg.value
   def mergeCombiners(a: Double, b: Double): Double =
     a + b
 
-  def compute(numVertices: Long, epsilon: Double)(self: PRVertex, messageSum: Option[Double], superstep: Int): (PRVertex, Iterable[PRMessage]) = {
+  def compute(numVertices: Long, epsilon: Double)(self: PRVertex[A], messageSum: Option[Double], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) = {
     val newValue = messageSum match {
       case Some(msgSum) if msgSum != 0 =>
         0.15 / numVertices + 0.85 * msgSum
@@ -98,59 +98,62 @@ object PRCombiner extends Combiner[PRMessage, Double] with Serializable {
         self.outEdges.map(edge =>
           new PRMessage(edge.targetId, newValue / self.outEdges.size))
       else
-        ArrayBuffer[PRMessage]()
+        ArrayBuffer[PRMessage[A]]()
 
     (new PRVertex(self.id, newValue, self.outEdges, !terminate), outbox)
   }
 }
 
-object PRNoCombiner extends DefaultCombiner[PRMessage] with Serializable {
-  def compute(numVertices: Long, epsilon: Double)(self: PRVertex, messages: Option[ArrayBuffer[PRMessage]], superstep: Int): (PRVertex, Iterable[PRMessage]) =
-    PRCombiner.compute(numVertices, epsilon)(self, messages match {
+class PRNoCombiner[A] extends DefaultCombiner[PRMessage[A]] with Serializable {
+  def compute(numVertices: Long, epsilon: Double)(self: PRVertex[A], messages: Option[ArrayBuffer[PRMessage[A]]], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) =
+    new PRCombiner().compute(numVertices, epsilon)(self, messages match {
       case Some(msgs) => Some(msgs.map(_.value).sum)
       case None => None
     }, superstep)
 }
 
-class PRVertex() extends Vertex with Serializable {
-  var id: String = _
+class PRVertex[A]() extends Vertex[A] with Serializable {
+  var id: A = _
   var value: Double = _
-  var outEdges: ArrayBuffer[PREdge] = _
-  var active: Boolean = true
+  var outEdges: ArrayBuffer[PREdge[A]] = _
+  var active: Boolean = _
+  var partition: Int = _
 
-  def this(id: String, value: Double, outEdges: ArrayBuffer[PREdge], active: Boolean) {
+  def this(id: A, value: Double, outEdges: ArrayBuffer[PREdge[A]], active: Boolean = true, partition: Int = 0) {
     this()
     this.id = id
     this.value = value
     this.outEdges = outEdges
     this.active = active
+    this.partition = partition
   }
 }
 
-class PRMessage() extends Message with Serializable {
-  var targetId: String = _
+class PRMessage[A]() extends Message[A] with Serializable {
+  var targetId: A = _
   var value: Double = _
 
-  def this(targetId: String, value: Double) {
+  def this(targetId: A, value: Double) {
     this()
     this.targetId = targetId
     this.value = value
   }
 }
 
-class PREdge() extends Edge with Serializable {
-  var targetId: String = _
+class PREdge[A]() extends Edge[A] with Serializable{
+  var targetId: A = _
 
-  def this(targetId: String) {
+  def this(targetId: A) {
     this()
     this.targetId = targetId
    }
 }
 
-class PRKryoRegistrator extends KryoRegistrator {
+class PRKryoRegistrator[A] extends KryoRegistrator {
   def registerClasses(kryo: Kryo) {
-    kryo.register(classOf[PRVertex])
-    kryo.register(classOf[PRMessage])
-    kryo.register(classOf[PREdge])
+    kryo.register(classOf[PRVertex[A]])
+    kryo.register(classOf[PRMessage[A]])
+    kryo.register(classOf[PREdge[A]])
   }
 }
+

@@ -6,10 +6,10 @@ import spark.SparkContext._
 import scala.collection.mutable.ArrayBuffer
 
 object Bagel extends Logging {
-  def run[V <: Vertex : Manifest, M <: Message : Manifest, C : Manifest, A : Manifest](
+  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C : Manifest, A : Manifest](
     sc: SparkContext,
-    verts: RDD[(String, V)],
-    msgs: RDD[(String, M)]
+    verts: RDD[(I, V)],
+    msgs: RDD[(I, M)]
   )(
     combiner: Combiner[M, C] = new DefaultCombiner[M],
     aggregator: Aggregator[V, A] = new NullAggregator[V],
@@ -26,7 +26,7 @@ object Bagel extends Logging {
     val combinedMsgs = msgs.combineByKey(combiner.createCombiner, combiner.mergeMsg, combiner.mergeCombiners, numSplits)
     println("partitioner: " + combinedMsgs.partitioner)
     val grouped = verts.groupWith(combinedMsgs)
-    val (processed, numMsgs, numActiveVerts) = comp[V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
+    val (processed, numMsgs, numActiveVerts) = comp[I, V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
 
     val timeTaken = System.currentTimeMillis - startTime
     logInfo("Superstep %d took %d s".format(superstep, timeTaken / 1000))
@@ -48,7 +48,7 @@ object Bagel extends Logging {
    * Aggregates the given vertices using the given aggregator, or does
    * nothing if it is a NullAggregator.
    */
-  def agg[V <: Vertex, A : Manifest](verts: RDD[(String, V)], aggregator: Aggregator[V, A]): A = aggregator match {
+  def agg[I, V <: Vertex[I], A : Manifest](verts: RDD[(I, V)], aggregator: Aggregator[V, A]): A = aggregator match {
     case _: NullAggregator[_] =>
       None
     case _ =>
@@ -62,7 +62,7 @@ object Bagel extends Logging {
    * function. Returns the processed RDD, the number of messages
    * created, and the number of active vertices.
    */
-  def comp[V <: Vertex, M <: Message, C](sc: SparkContext, grouped: RDD[(String, (Seq[V], Seq[C]))], compute: (V, Option[C]) => (V, Iterable[M])): (RDD[(String, (V, Iterable[M]))], Int, Int) = {
+  def comp[I : Manifest, V <: Vertex[I], M <: Message[I], C](sc: SparkContext, grouped: RDD[(I, (Seq[V], Seq[C]))], compute: (V, Option[C]) => (V, Iterable[M])): (RDD[(I, (V, Iterable[M]))], Int, Int) = {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
     val processed = grouped.flatMapValues {
@@ -92,7 +92,7 @@ object Bagel extends Logging {
    * one that does, so it can be passed to Bagel.run.
    */
   implicit def addAggregatorArg[
-    V <: Vertex : Manifest, M <: Message : Manifest, C
+    I, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C
   ](
     compute: (V, Option[C], Int) => (V, Iterable[M])
   ): (V, Option[C], Option[Nothing], Int) => (V, Iterable[M]) = {
@@ -132,8 +132,8 @@ class NullAggregator[V] extends Aggregator[V, Option[Nothing]] with Serializable
  * Subclasses may store state along with each vertex and must
  * inherit from java.io.Serializable or scala.Serializable.
  */
-trait Vertex {
-  def id: String
+trait Vertex[A] {
+  def id: A
   def active: Boolean
 }
 
@@ -143,8 +143,8 @@ trait Vertex {
  * Subclasses may contain a payload to deliver to the target vertex
  * and must inherit from java.io.Serializable or scala.Serializable.
  */
-trait Message {
-  def targetId: String
+trait Message[A] {
+  def targetId: A
 }
 
 /**
@@ -153,6 +153,6 @@ trait Message {
  * Subclasses may store state along each edge and must inherit from
  * java.io.Serializable or scala.Serializable.
  */
-trait Edge {
-  def targetId: String
+trait Edge[A] {
+  def targetId: A
 }

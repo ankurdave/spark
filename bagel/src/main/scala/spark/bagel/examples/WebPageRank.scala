@@ -1,4 +1,4 @@
-package spark.bagel.examples
+/*package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -22,7 +22,7 @@ object WebPageRank {
     }
 
     System.setProperty("spark.serialization", "spark.KryoSerialization")
-    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator].getName)
+    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator[Int]].getName)
 
     val inputFile = args(0)
     val threshold = args(1).toDouble
@@ -40,22 +40,22 @@ object WebPageRank {
     println("Done counting vertices: " + numVertices)
 
     println("Parsing input file...")
-    val vertices: RDD[(String, PRVertex)] = sc.parallelize(
+    val vertices: RDD[(String, PRVertex[Int])] = sc.parallelize(
       for {
         i <- 0 until numVertices
-        outEdges = getSuccessors(i, input).map(targetId => new PREdge(targetId.toString()))
+        outEdges = WebGraphParser.getSuccessors(i, input).map(targetId => new PREdge(targetId.toString()))
       } yield (i.toString(), new PRVertex(i.toString(), 1.0 / numVertices, outEdges, true))
     ).cache
     println("Done parsing input file.")
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(List[(String, PRMessage)]())
+    val messages = sc.parallelize(List[(String, PRMessage[Int])]())
     val result =
       if (!useCombiner) {
-        Bagel.run(sc, vertices, messages)(numSplits = numSplits)(PRNoCombiner.compute(numVertices, epsilon))
+        Bagel.run(sc, vertices, messages)(numSplits = numSplits)(new PRNoCombiner().compute(numVertices, epsilon))
       } else {
-        Bagel.run(sc, vertices, messages)(combiner = PRCombiner, numSplits = numSplits)(PRCombiner.compute(numVertices, epsilon))
+        Bagel.run(sc, vertices, messages)(combiner = new PRCombiner(), numSplits = numSplits)(PRCombiner.compute(numVertices, epsilon))
       }
 
     // Print the result
@@ -64,16 +64,5 @@ object WebPageRank {
       "%s\t%s\n".format(vertex.id, vertex.value)).collect.mkString
     println(top)
   }
-
-  def getSuccessors(i: Int, g: BVGraph): ArrayBuffer[Int] = {
-    val result = new ArrayBuffer[Int]
-    val successors = g.successors(i)
-    var d = g.outdegree(i) - 1
-//    println("Vertex " + i + " has outdegree " + d)
-    while (d > 0) {
-      result.append(successors.nextInt())
-      d -= 1
-    }
-    result
-  }
 }
+*/
