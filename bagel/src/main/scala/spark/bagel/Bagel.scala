@@ -52,7 +52,9 @@ object Bagel extends Logging {
     superstep: Int = 0,
     numSplits: Int = 0
   ): RDD[V] = {
-    runWithAggregator[I, V, M, C, Nothing](sc, verts, msgs, None, addAggregatorArg(compute), combiner, superstep, numSplits)
+    runWithAggregator[I, V, M, C, Nothing](
+      sc, verts, msgs, None, addAggregatorArg[I, V, M, C](compute), combiner,
+      superstep, numSplits)
   }
 
   /**

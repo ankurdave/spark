@@ -56,7 +56,7 @@ object WebPageRank {
           util.computeNoCombiner(numVertices, epsilon),
           numSplits = numSplits)
       } else {
-        Bagel.run[Int, PRVertex[Int], PRMessage[Int], Double](
+        Bagel.run(
           sc, vertices, messages,
           util.computeWithCombiner(numVertices, epsilon),
           combiner = new PRCombiner[Int](), numSplits = numSplits)

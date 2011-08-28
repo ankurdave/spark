@@ -24,7 +24,7 @@ class PRCombiner[A] extends Combiner[PRMessage[A], Double] {
 }
 
 class PageRankUtils[A] {
-  def computeWithCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messageSum: Option[Double], aggregated: Option[Nothing], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) = {
+  def computeWithCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messageSum: Option[Double], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) = {
     val newValue = messageSum match {
       case Some(msgSum) if msgSum != 0 =>
         0.15 / numVertices + 0.85 * msgSum
@@ -43,11 +43,11 @@ class PageRankUtils[A] {
     (new PRVertex(self.id, newValue, self.outEdges, !terminate), outbox)
   }
 
-  def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messages: Option[ArrayBuffer[PRMessage[A]]], aggregated: Option[Nothing], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) =
+  def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messages: Option[ArrayBuffer[PRMessage[A]]], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) =
     computeWithCombiner(numVertices, epsilon)(self, messages match {
       case Some(msgs) => Some(msgs.map(_.value).sum)
       case None => None
-    }, aggregated, superstep)
+    }, superstep)
 }
 
 @serializable class PRVertex[A]() extends Vertex[A] {
