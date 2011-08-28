@@ -33,8 +33,9 @@ object WebPageRank {
     val sc = new SparkContext(host, "WebPageRank")
 
     val vertices = sc.textFile(inputFile).map(line => {
-      val fields = line.split(",")
-      val outEdges = fields(5).split(" ").map(x => new PREdge(x.toInt))
+      val fields = line.substring(1, line.length - 1).split(",")
+      val outEdges = (fields.slice(5, fields.length)
+                      .map(x => new PREdge(x.toInt)))
       (fields(0).toInt,
        new PRVertex(
          fields(1).toInt, fields(2).toDouble, ArrayBuffer(outEdges: _*),

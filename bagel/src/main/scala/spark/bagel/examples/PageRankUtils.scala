@@ -13,7 +13,7 @@ import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInp
 
 import com.esotericsoftware.kryo._
 
-class PageRankUtils[A] {
+class PageRankUtils[A] extends Serializable {
   def computeWithCombiner(numVertices: Long, epsilon: Double)(
     self: PRVertex[A], messageSum: Option[Double], superstep: Int
   ): (PRVertex[A], Iterable[PRMessage[A]]) = {
@@ -68,8 +68,8 @@ class PRVertex[A]() extends Vertex[A] with Serializable {
   }
 
   override def toString(): String = {
-    "[%s,%s,%s,%s,%s]".format(
-      id, value, active, partition, outEdges.mkString(" "))
+    "%s,%s,%s,%s,%s".format(
+      id, value, active, partition, outEdges.mkString(","))
   }
 }
 
