@@ -13,6 +13,7 @@ object Bagel extends Logging {
     messages: RDD[(I, M)],
     combiner: Combiner[M, C],
     aggregator: Option[Aggregator[V, A]],
+    partitioner: Partitioner,
     numSplits: Int
   )(
     compute: (V, Option[C], Option[A], Int) => (V, Iterable[M])
@@ -30,7 +31,7 @@ object Bagel extends Logging {
       val aggregated = agg(verts, aggregator)
       val combinedMsgs = msgs.combineByKey(
         combiner.createCombiner, combiner.mergeMsg, combiner.mergeCombiners,
-        splits)
+        splits, partitioner)
       println("partitioner: " + combinedMsgs.partitioner)
       val grouped = verts.groupWith(combinedMsgs)
       val (processed, numMsgs, numActiveVerts) =
@@ -57,11 +58,29 @@ object Bagel extends Logging {
     vertices: RDD[(I, V)],
     messages: RDD[(I, M)],
     combiner: Combiner[M, C],
+    partitioner: Partitioner,
     numSplits: Int
   )(
     compute: (V, Option[C], Int) => (V, Iterable[M])
   ): RDD[(I, V)] = {
-    run[I, V, M, C, Nothing](sc, vertices, messages, combiner, None, numSplits)(
+    run[I, V, M, C, Nothing](
+      sc, vertices, messages, combiner, None, partitioner, numSplits)(
+      addAggregatorArg[I, V, M, C](compute))
+  }
+
+  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest,
+          C : Manifest](
+    sc: SparkContext,
+    vertices: RDD[(I, V)],
+    messages: RDD[(I, M)],
+    combiner: Combiner[M, C],
+    numSplits: Int
+  )(
+    compute: (V, Option[C], Int) => (V, Iterable[M])
+  ): RDD[(I, V)] = {
+    val part = new HashPartitioner(numSplits)
+    run[I, V, M, C, Nothing](
+      sc, vertices, messages, combiner, None, part, numSplits)(
       addAggregatorArg[I, V, M, C](compute))
   }
 
@@ -73,8 +92,9 @@ object Bagel extends Logging {
   )(
     compute: (V, Option[ArrayBuffer[M]], Int) => (V, Iterable[M])
   ): RDD[(I, V)] = {
+    val part = new HashPartitioner(numSplits)
     run[I, V, M, ArrayBuffer[M], Nothing](
-      sc, vertices, messages, new DefaultCombiner(), None, numSplits)(
+      sc, vertices, messages, new DefaultCombiner(), None, part, numSplits)(
       addAggregatorArg[I, V, M, ArrayBuffer[M]](compute))
   }
 
