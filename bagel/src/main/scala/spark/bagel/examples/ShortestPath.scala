@@ -1,4 +1,4 @@
-/*package spark.bagel.examples
+package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -28,7 +28,7 @@ object ShortestPath {
        .filter(!_.matches("^\\s*#.*"))
        .map(line => line.split("\t")))
 
-    val vertices: RDD[(String, SPVertex)] =
+    val vertices =
       (lines.groupBy(line => line(0))
        .map {
          case (vertexId, lines) => {
@@ -41,7 +41,7 @@ object ShortestPath {
          }
        })
 
-    val messages: RDD[(String, SPMessage)] =
+    val messages =
       (lines.filter(_.length == 2)
        .map {
          case Array(vertexId, messageValue) =>
@@ -52,7 +52,7 @@ object ShortestPath {
                        messages.count()+" messages.")
 
     // Do the computation
-    val compute = addAggregatorArg {
+    val compute = {
       (self: SPVertex, messageMinValue: Option[Int], superstep: Int) =>
         val newValue = messageMinValue match {
           case Some(minVal) => min(self.value, minVal)
@@ -68,15 +68,15 @@ object ShortestPath {
 
         (new SPVertex(self.id, newValue, self.outEdges, false), outbox)
     }
-    val result = Bagel.run(sc, vertices, messages)(combiner = MinCombiner, numSplits = numSplits)(compute)
+    val result = Bagel.run(sc, vertices, messages, combiner = MinCombiner, numSplits = numSplits)(compute)
 
     // Print the result
     System.err.println("Shortest path from "+startVertex+" to all vertices:")
-    val shortest = result.map(vertex =>
+    val shortest = result.map { case (id, vertex) =>
       "%s\t%s\n".format(vertex.id, vertex.value match {
         case x if x == Int.MaxValue => "inf"
         case x => x
-      })).collect.mkString
+      })}.collect.mkString
     println(shortest)
   }
 }
@@ -90,7 +90,6 @@ object MinCombiner extends Combiner[SPMessage, Int] with Serializable {
     min(a, b)
 }
 
-class SPVertex(val id: String, val value: Int, val outEdges: Seq[SPEdge], val active: Boolean) extends Vertex with Serializable
-class SPEdge(val targetId: String, val value: Int) extends Edge with Serializable
-class SPMessage(val targetId: String, val value: Int) extends Message with Serializable
-*/
+class SPVertex(val id: String, val value: Int, val outEdges: Seq[SPEdge], val active: Boolean) extends Vertex[String] with Serializable
+class SPEdge(val targetId: String, val value: Int) extends Edge[String] with Serializable
+class SPMessage(val targetId: String, val value: Int) extends Message[String] with Serializable

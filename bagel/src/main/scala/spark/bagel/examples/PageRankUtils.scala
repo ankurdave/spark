@@ -13,18 +13,10 @@ import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInp
 
 import com.esotericsoftware.kryo._
 
-@serializable
-class PRCombiner[A] extends Combiner[PRMessage[A], Double] {
-  def createCombiner(msg: PRMessage[A]): Double =
-    msg.value
-  def mergeMsg(combiner: Double, msg: PRMessage[A]): Double =
-    combiner + msg.value
-  def mergeCombiners(a: Double, b: Double): Double =
-    a + b
-}
-
 class PageRankUtils[A] {
-  def computeWithCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messageSum: Option[Double], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) = {
+  def computeWithCombiner(numVertices: Long, epsilon: Double)(
+    self: PRVertex[A], messageSum: Option[Double], superstep: Int
+  ): (PRVertex[A], Iterable[PRMessage[A]]) = {
     val newValue = messageSum match {
       case Some(msgSum) if msgSum != 0 =>
         0.15 / numVertices + 0.85 * msgSum
@@ -48,6 +40,15 @@ class PageRankUtils[A] {
       case Some(msgs) => Some(msgs.map(_.value).sum)
       case None => None
     }, superstep)
+}
+
+class PRCombiner[A] extends Combiner[PRMessage[A], Double] with Serializable {
+  def createCombiner(msg: PRMessage[A]): Double =
+    msg.value
+  def mergeMsg(combiner: Double, msg: PRMessage[A]): Double =
+    combiner + msg.value
+  def mergeCombiners(a: Double, b: Double): Double =
+    a + b
 }
 
 @serializable class PRVertex[A]() extends Vertex[A] {

@@ -12,7 +12,7 @@ import scala.xml.{XML,NodeSeq}
 import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
 
 import com.esotericsoftware.kryo._
-/*
+
 object WikipediaPageRank {
   def main(args: Array[String]) {
     if (args.length < 4) {
@@ -21,7 +21,7 @@ object WikipediaPageRank {
     }
 
     System.setProperty("spark.serialization", "spark.KryoSerialization")
-    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator].getName)
+    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator[String]].getName)
 
     val inputFile = args(0)
     val threshold = args(1).toDouble
@@ -38,7 +38,7 @@ object WikipediaPageRank {
     println("Done counting vertices.")
 
     println("Parsing input file...")
-    val vertices: RDD[(String, PRVertex[String])] = input.map(line => {
+    val vertices = input.map(line => {
       val fields = line.split("\t")
       val (title, body) = (fields(1), fields(3).replace("\\n", "\n"))
       val links =
@@ -61,18 +61,27 @@ object WikipediaPageRank {
     // Do the computation
     val epsilon = 0.01 / numVertices
     val messages = sc.parallelize(List[(String, PRMessage[String])]())
+    val utils = new PageRankUtils[String]
     val result =
       if (noCombiner) {
-        Bagel.run(sc, vertices, messages)(numSplits = numSplits)(new PRNoCombiner().compute(numVertices, epsilon))
+        Bagel.run(
+          sc, vertices, messages, numSplits = numSplits)(
+          utils.computeNoCombiner(numVertices, epsilon))
       } else {
-        Bagel.run(sc, vertices, messages)(combiner = new PRCombiner(), numSplits = numSplits)(PRCombiner.compute(numVertices, epsilon))
+        Bagel.run(
+          sc, vertices, messages, combiner = new PRCombiner[String](),
+          numSplits = numSplits)(
+          utils.computeWithCombiner(numVertices, epsilon))
       }
 
     // Print the result
     System.err.println("Articles with PageRank >= "+threshold+":")
-    val top = result.filter(_.value >= threshold).map(vertex =>
-      "%s\t%s\n".format(vertex.id, vertex.value)).collect.mkString
+    val top =
+      (result
+       .filter { case (id, vertex) => vertex.value >= threshold }
+       .map { case (id, vertex) => "%s\t%s\n".format(vertex.id, vertex.value) }
+       .collect.mkString)
     println(top)
   }
 }
-*/
+

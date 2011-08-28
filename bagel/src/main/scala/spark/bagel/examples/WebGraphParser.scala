@@ -49,7 +49,7 @@ object WebGraphParser {
 
     val numVertices = graph.numNodes()
     print("Parsing %d nodes into RDD...".format(numVertices))
-    val vertices: RDD[(Int, PRVertex[Int])] = sc.parallelize(
+    val vertices = sc.parallelize(
       for {
         i <- 0 until numVertices
         outEdges = getSuccessors(i, graph).map(
