@@ -20,7 +20,7 @@ import it.unimi.dsi.webgraph.BVGraph
 
 object WebGraphParser {
   def main(args: Array[String]) {
-    if (args.length < 2) {
+    if (args.length < 1) {
       System.err.println(
         "Usage: WebGraphParser <graphBaseName> > <outputFile>")
       System.exit(-1)
@@ -51,7 +51,11 @@ object WebGraphParser {
       val partition = getNodePartition(i, list)
       val key = (i, partition)
       val entry = (key, new PRVertex(key, 1.0 / numVertices, outEdges))
-      print(entry)
+      println(entry)
+
+      if (i % 1000000 == 0) {
+        System.err.print(".")
+      }
     }
     System.err.println("done.")
   }
