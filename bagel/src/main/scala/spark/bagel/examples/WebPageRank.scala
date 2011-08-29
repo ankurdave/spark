@@ -31,8 +31,8 @@ object WebPageRank {
     val usePartitioner = args(4).toBoolean
     val sc = new SparkContext(host, "WebPageRank")
 
-    val InputLine = """\(\((\d+),(\d+)\),\(\d+,\d+\),(\d+),(\d+),(.*)\)""".r
-    val EdgeEntry = """\((\d+),(\d+)\),?""".r
+    val InputLine = """\(\(([^,]+),([^,]+)\),\([^,]+,[^,]+\),([^,]+),([^,]+),(.*)\)""".r
+    val EdgeEntry = """\(([^,]+),([^,]+)\),?""".r
     val vertices = sc.textFile(inputFile).map(line => {
       val InputLine(id, partition, value, active, rest) = line
       val key = (id.toInt, partition.toInt)
