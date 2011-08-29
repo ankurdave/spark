@@ -8,7 +8,6 @@ import spark.bagel.Bagel._
 
 import scala.collection.mutable.ArrayBuffer
 
-import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
 import java.net.URL
 
 import com.esotericsoftware.kryo._
@@ -17,61 +16,51 @@ import it.unimi.dsi.fastutil.io.BinIO
 import it.unimi.dsi.fastutil.objects.ObjectList
 import it.unimi.dsi.lang.MutableString
 import it.unimi.dsi.util.ImmutableExternalPrefixMap
-import it.unimi.dsi.webgraph.{ImmutableGraph,BVGraph}
+import it.unimi.dsi.webgraph.BVGraph
 
 object WebGraphParser {
   def main(args: Array[String]) {
-    if (args.length < 3) {
+    if (args.length < 2) {
       System.err.println(
-        "Usage: WebGraphParser <graphBaseName> <outputDir> <host>")
+        "Usage: WebGraphParser <graphBaseName> > <outputFile>")
       System.exit(-1)
     }
 
     val graphBaseName = args(0)
-    val outputDir = args(1)
-    val host = args(2)
-    val sc = new SparkContext(host, "WebGraphParser")
 
-    print("Loading pmap...")
+    System.err.print("Loading pmap...")
     val pmap =
       (BinIO.loadObject(graphBaseName + ".pmap")
        .asInstanceOf[ImmutableExternalPrefixMap])
     pmap.setDumpStream(graphBaseName + ".dump")
-    println("done.")
+    System.err.println("done.")
 
-    print("Converting pmap to list...")
+    System.err.print("Converting pmap to list...")
     val list = pmap.list()
-    println("done.")
+    System.err.println("done.")
 
-    print("Loading graph...")
+    System.err.print("Loading graph...")
     val graph = BVGraph.load(graphBaseName)
-    println("done.")
+    System.err.println("done.")
 
     val numVertices = graph.numNodes()
-    print("Parsing %d nodes into RDD...".format(numVertices))
-    val vertices = sc.parallelize(
-      for {
-        i <- 0 until numVertices
-        outEdges = getSuccessors(i, graph).map(
-          targetId => new PREdge((targetId, getNodePartition(targetId, list))))
-        partition = getNodePartition(i, list)
-        key = (i, partition)
-      } yield (key, new PRVertex(key, 1.0 / numVertices, outEdges))
-    )
-    println("done.")
-
-    println("URL for node with ID 100: %s".format(list.get(100)))
-
-    print("Saving RDD...")
-    vertices.saveAsTextFile(outputDir)
-    println("done.")
+    System.err.print("Parsing %d nodes...".format(numVertices))
+    for (i <- 0 until numVertices) {
+      val outEdges = getSuccessors(i, graph).map(
+        targetId => new PREdge((targetId, getNodePartition(targetId, list))))
+      val partition = getNodePartition(i, list)
+      val key = (i, partition)
+      val entry = (key, new PRVertex(key, 1.0 / numVertices, outEdges))
+      print(entry)
+    }
+    System.err.println("done.")
   }
 
   def getSuccessors(i: Int, g: BVGraph): ArrayBuffer[Int] = {
     val result = new ArrayBuffer[Int]
     val successors = g.successors(i)
     var d = g.outdegree(i) - 1
-    //    println("Vertex " + i + " has outdegree " + d)
+    //    System.err.println("Vertex " + i + " has outdegree " + d)
     while (d > 0) {
       result.append(successors.nextInt())
       d -= 1
@@ -82,7 +71,7 @@ object WebGraphParser {
   def getNodePartition(i: Int, list: ObjectList[MutableString]): Int = {
     val url = list.get(i).toString()
     val host = new URL(url).getHost()
-//    println("Vertex %d has host %s".format(i, host))
+//    System.err.println("Vertex %d has host %s".format(i, host))
     host.hashCode()
   }
 }
