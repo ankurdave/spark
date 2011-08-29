@@ -53,9 +53,10 @@ object WebGraphParser {
       for {
         i <- 0 until numVertices
         outEdges = getSuccessors(i, graph).map(
-          targetId => new PREdge(targetId))
-      } yield (i, new PRVertex(i, 1.0 / numVertices, outEdges,
-                               partition = getNodePartition(i, list)))
+          targetId => new PREdge((targetId, getNodePartition(targetId, list))))
+        partition = getNodePartition(i, list)
+        key = (i, partition)
+      } yield (key, new PRVertex(key, 1.0 / numVertices, outEdges))
     )
     println("done.")
 

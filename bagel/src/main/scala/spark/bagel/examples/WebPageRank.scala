@@ -22,7 +22,7 @@ object WebPageRank {
     }
 
     System.setProperty("spark.serialization", "spark.KryoSerialization")
-    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator[Int]].getName)
+    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator[(Int, Int)]].getName)
 
     val inputFile = args(0)
     val threshold = args(1).toDouble
@@ -32,14 +32,17 @@ object WebPageRank {
     val usePartitioner = args(5).toBoolean
     val sc = new SparkContext(host, "WebPageRank")
 
+    val InputLine = """\(\((\d+),(\d+)\),\(\d+,\d+\),(\d+),(\d+),(.*)\)""".r
+    val EdgeEntry = """\((\d+),(\d+)\),?""".r
     val vertices = sc.textFile(inputFile).map(line => {
-      val fields = line.substring(1, line.length - 1).split(",")
-      val outEdges = (fields.slice(5, fields.length)
-                      .map(x => new PREdge(x.toInt)))
-      (fields(0).toInt,
-       new PRVertex(
-         fields(1).toInt, fields(2).toDouble, ArrayBuffer(outEdges: _*),
-         fields(3).toBoolean, fields(4).toInt))
+      val InputLine(id, partition, value, active, rest) = line
+      val key = (id.toInt, partition.toInt)
+      val outEdges = EdgeEntry.findAllIn(rest).map {
+        case EdgeEntry(targetId, targetPartition) =>
+          new PREdge((targetId.toInt, targetPartition.toInt))
+      }.toList
+      (key, new PRVertex(key, value.toDouble, ArrayBuffer(outEdges: _*),
+                         active.toBoolean))
     }).cache
 
     println("Counting vertices...")
@@ -48,8 +51,8 @@ object WebPageRank {
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(List[(Int, PRMessage[Int])]())
-    val util = new PageRankUtils[Int]
+    val messages = sc.parallelize(List[((Int, Int), PRMessage[(Int, Int)])]())
+    val util = new PageRankUtils[(Int, Int)]
     val result =
       if (!useCombiner) {
         Bagel.run(
@@ -57,7 +60,7 @@ object WebPageRank {
           util.computeNoCombiner(numVertices, epsilon))
       } else {
         Bagel.run(
-          sc, vertices, messages, combiner = new PRCombiner[Int](),
+          sc, vertices, messages, combiner = new PRCombiner[(Int, Int)](),
           numSplits = numSplits)(
           util.computeWithCombiner(numVertices, epsilon))
       }

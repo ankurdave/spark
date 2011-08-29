@@ -56,20 +56,18 @@ class PRVertex[A]() extends Vertex[A] with Serializable {
   var value: Double = _
   var outEdges: ArrayBuffer[PREdge[A]] = _
   var active: Boolean = _
-  var partition: Int = _
 
-  def this(id: A, value: Double, outEdges: ArrayBuffer[PREdge[A]], active: Boolean = true, partition: Int = 0) {
+  def this(id: A, value: Double, outEdges: ArrayBuffer[PREdge[A]], active: Boolean = true) {
     this()
     this.id = id
     this.value = value
     this.outEdges = outEdges
     this.active = active
-    this.partition = partition
   }
 
   override def toString(): String = {
-    "%s,%s,%s,%s,%s".format(
-      id, value, active, partition, outEdges.mkString(","))
+    "%s,%s,%s,%s".format(
+      id, value, active, outEdges.mkString(","))
   }
 }
 
