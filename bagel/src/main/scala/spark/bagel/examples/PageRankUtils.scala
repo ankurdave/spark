@@ -103,3 +103,22 @@ class PRKryoRegistrator[A] extends KryoRegistrator {
   }
 }
 
+class CustomPartitioner(partitions: Int) extends Partitioner {
+  def numPartitions = partitions
+
+  def getPartition(key: Any) = {
+    val hash = key match {
+      case (id: Int, partition: Int) => partition
+      case _ => key.hashCode
+    }
+
+    val mod = key.hashCode % partitions
+    if (mod < 0) mod + partitions else mod
+  }
+
+  override def equals(other: Any): Boolean = other match {
+    case c: CustomPartitioner =>
+      c.numPartitions == numPartitions
+    case _ => false
+  }
+}

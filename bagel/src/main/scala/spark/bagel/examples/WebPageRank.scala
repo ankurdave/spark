@@ -16,8 +16,8 @@ import it.unimi.dsi.webgraph.{ImmutableGraph,BVGraph}
 
 object WebPageRank {
   def main(args: Array[String]) {
-    if (args.length < 6) {
-      System.err.println("Usage: WebPageRank <input> <threshold> <numSplits> <host> <useCombiner> <usePartitioner>")
+    if (args.length < 5) {
+      System.err.println("Usage: WebPageRank <input> <threshold> <numSplits> <host> <usePartitioner>")
       System.exit(-1)
     }
 
@@ -28,8 +28,7 @@ object WebPageRank {
     val threshold = args(1).toDouble
     val numSplits = args(2).toInt
     val host = args(3)
-    val useCombiner = args(4).toBoolean
-    val usePartitioner = args(5).toBoolean
+    val usePartitioner = args(4).toBoolean
     val sc = new SparkContext(host, "WebPageRank")
 
     val InputLine = """\(\((\d+),(\d+)\),\(\d+,\d+\),(\d+),(\d+),(.*)\)""".r
@@ -54,16 +53,10 @@ object WebPageRank {
     val messages = sc.parallelize(List[((Int, Int), PRMessage[(Int, Int)])]())
     val util = new PageRankUtils[(Int, Int)]
     val result =
-      if (!useCombiner) {
-        Bagel.run(
-          sc, vertices, messages, numSplits = numSplits)(
-          util.computeNoCombiner(numVertices, epsilon))
-      } else {
-        Bagel.run(
-          sc, vertices, messages, combiner = new PRCombiner[(Int, Int)](),
-          numSplits = numSplits)(
-          util.computeWithCombiner(numVertices, epsilon))
-      }
+      Bagel.run(
+        sc, vertices, messages, combiner = new PRCombiner[(Int, Int)](),
+        partitioner = new CustomPartitioner(numSplits), numSplits = numSplits)(
+        util.computeWithCombiner(numVertices, epsilon))
 
     // Print the result
     System.err.println("Pages with PageRank >= " + threshold + ":")
