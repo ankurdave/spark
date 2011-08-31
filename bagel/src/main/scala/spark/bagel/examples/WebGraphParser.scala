@@ -28,15 +28,10 @@ object WebGraphParser {
 
     val graphBaseName = args(0)
 
-    System.err.print("Loading pmap...")
-    val pmap =
-      (BinIO.loadObject(graphBaseName + ".pmap")
-       .asInstanceOf[ImmutableExternalPrefixMap])
-    pmap.setDumpStream(graphBaseName + ".dump")
-    System.err.println("done.")
-
-    System.err.print("Converting pmap to list...")
-    val list = pmap.list()
+    System.err.print("Loading fcl...")
+    val list =
+      (BinIO.loadObject(graphBaseName + ".fcl")
+       .asInstanceOf[ObjectList[CharSequence]])
     System.err.println("done.")
 
     System.err.print("Loading graph...")
@@ -47,14 +42,17 @@ object WebGraphParser {
     System.err.print("Parsing %d nodes...".format(numVertices))
     for (i <- 0 until numVertices) {
       val outEdges = getSuccessors(i, graph).map(
-        targetId => new PREdge((targetId, getNodePartition(targetId, list))))
+        targetId => new PREdge( (targetId, getNodePartition(targetId, list))))
       val partition = getNodePartition(i, list)
       val key = (i, partition)
       val entry = (key, new PRVertex(key, 1.0 / numVertices, outEdges))
       println(entry)
 
-      if (i % 1000000 == 0) {
+      if (i % 10000 == 0) {
         System.err.print(".")
+      }
+      if (i % 1000000 == 0) {
+        System.err.print(i)
       }
     }
     System.err.println("done.")
@@ -72,7 +70,7 @@ object WebGraphParser {
     result
   }
 
-  def getNodePartition(i: Int, list: ObjectList[MutableString]): Int = {
+  def getNodePartition(i: Int, list: ObjectList[CharSequence]): Int = {
     val url = list.get(i).toString()
     val host = new URL(url).getHost()
 //    System.err.println("Vertex %d has host %s".format(i, host))
