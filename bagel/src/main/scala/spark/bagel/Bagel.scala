@@ -6,7 +6,7 @@ import spark.SparkContext._
 import scala.collection.mutable.ArrayBuffer
 
 object Bagel extends Logging {
-  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest,
+  def run[I : Manifest, V <: Vertex : Manifest, M <: Message[I] : Manifest,
           C : Manifest, A : Manifest](
     sc: SparkContext,
     vertices: RDD[(I, V)],
@@ -52,7 +52,7 @@ object Bagel extends Logging {
     verts
   }
 
-  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest,
+  def run[I : Manifest, V <: Vertex : Manifest, M <: Message[I] : Manifest,
           C : Manifest](
     sc: SparkContext,
     vertices: RDD[(I, V)],
@@ -68,7 +68,7 @@ object Bagel extends Logging {
       addAggregatorArg[I, V, M, C](compute))
   }
 
-  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest,
+  def run[I : Manifest, V <: Vertex : Manifest, M <: Message[I] : Manifest,
           C : Manifest](
     sc: SparkContext,
     vertices: RDD[(I, V)],
@@ -84,7 +84,7 @@ object Bagel extends Logging {
       addAggregatorArg[I, V, M, C](compute))
   }
 
-  def run[I : Manifest, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest](
+  def run[I : Manifest, V <: Vertex : Manifest, M <: Message[I] : Manifest](
     sc: SparkContext,
     vertices: RDD[(I, V)],
     messages: RDD[(I, M)],
@@ -102,7 +102,7 @@ object Bagel extends Logging {
    * Aggregates the given vertices using the given aggregator, if it
    * is specified.
    */
-  private def agg[I, V <: Vertex[I], A : Manifest](
+  private def agg[I, V <: Vertex, A : Manifest](
     verts: RDD[(I, V)],
     aggregator: Option[Aggregator[V, A]]
   ): Option[A] = aggregator match {
@@ -118,7 +118,7 @@ object Bagel extends Logging {
    * function. Returns the processed RDD, the number of messages
    * created, and the number of active vertices.
    */
-  private def comp[I : Manifest, V <: Vertex[I], M <: Message[I], C](
+  private def comp[I : Manifest, V <: Vertex, M <: Message[I], C](
     sc: SparkContext,
     grouped: RDD[(I, (Seq[V], Seq[C]))],
     compute: (V, Option[C]) => (V, Iterable[M])
@@ -152,7 +152,7 @@ object Bagel extends Logging {
    * one that does, so it can be passed to Bagel.run.
    */
   private def addAggregatorArg[
-    I, V <: Vertex[I] : Manifest, M <: Message[I] : Manifest, C
+    I, V <: Vertex : Manifest, M <: Message[I] : Manifest, C
   ](
     compute: (V, Option[C], Int) => (V, Iterable[M])
   ): (V, Option[C], Option[Nothing], Int) => (V, Iterable[M]) = {
@@ -187,8 +187,7 @@ class DefaultCombiner[M] extends Combiner[M, ArrayBuffer[M]] with Serializable {
  * Subclasses may store state along with each vertex and must
  * inherit from java.io.Serializable or scala.Serializable.
  */
-trait Vertex[A] {
-  def id: A
+trait Vertex {
   def active: Boolean
 }
 
@@ -199,15 +198,5 @@ trait Vertex[A] {
  * and must inherit from java.io.Serializable or scala.Serializable.
  */
 trait Message[A] {
-  def targetId: A
-}
-
-/**
- * Represents a directed edge between two vertices.
- *
- * Subclasses may store state along each edge and must inherit from
- * java.io.Serializable or scala.Serializable.
- */
-trait Edge[A] {
   def targetId: A
 }

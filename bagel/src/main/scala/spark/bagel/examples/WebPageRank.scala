@@ -1,4 +1,4 @@
-package spark.bagel.examples
+/*package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -10,8 +10,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
 
-import com.esotericsoftware.kryo._
-
 import it.unimi.dsi.webgraph.{ImmutableGraph,BVGraph}
 
 object WebPageRank {
@@ -21,9 +19,6 @@ object WebPageRank {
       System.exit(-1)
     }
 
-    System.setProperty("spark.serialization", "spark.KryoSerialization")
-    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator[(Int, Int)]].getName)
-
     val inputFile = args(0)
     val threshold = args(1).toDouble
     val numSplits = args(2).toInt
@@ -31,8 +26,11 @@ object WebPageRank {
     val usePartitioner = args(4).toBoolean
     val sc = new SparkContext(host, "WebPageRank")
 
-    val InputLine = """\(\(([^,]+),([^,]+)\),\([^,]+,[^,]+\),([^,]+),([^,]+),(.*)\)""".r
-    val EdgeEntry = """\(([^,]+),([^,]+)\),?""".r
+    System.setProperty("spark.serialization", "spark.KryoSerialization")
+    System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
+
+    val stream = (new KryoSerializer().newInstance()
+                  .inputStream(new FileInputStream(inputFile)))
     val vertices = sc.textFile(inputFile).map(line => {
       val InputLine(id, partition, value, active, rest) = line
       val key = (id.toInt, partition.toInt)
@@ -69,3 +67,4 @@ object WebPageRank {
     println(top)
   }
 }
+*/

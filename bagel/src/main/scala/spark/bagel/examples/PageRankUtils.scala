@@ -25,14 +25,14 @@ class PageRankUtils[A] extends Serializable {
 
     val terminate = (superstep >= 10 && (newValue - self.value).abs < epsilon) || superstep >= 30
 
-    val outbox =
+    val outbox: Iterable[PRMessage[A]] =
       if (!terminate)
-        self.outEdges.map(edge =>
-          new PRMessage(edge.targetId, newValue / self.outEdges.size))
+        self.outEdges.map(targetId =>
+          new PRMessage(targetId, newValue / self.outEdges.size))
       else
         ArrayBuffer[PRMessage[A]]()
 
-    (new PRVertex(self.id, newValue, self.outEdges, !terminate), outbox)
+    (new PRVertex(newValue, self.outEdges, !terminate), outbox)
   }
 
   def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messages: Option[ArrayBuffer[PRMessage[A]]], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) =
@@ -51,25 +51,31 @@ class PRCombiner[A] extends Combiner[PRMessage[A], Double] with Serializable {
     a + b
 }
 
-class PRVertex[A]() extends Vertex[A] with Serializable {
-  var id: A = _
+class PRVertex[A]() extends Vertex with Serializable {
   var value: Double = _
-  var outEdges: ArrayBuffer[PREdge[A]] = _
+  var outEdges: Array[A] = _
   var active: Boolean = _
 
-  def this(id: A, value: Double, outEdges: ArrayBuffer[PREdge[A]], active: Boolean = true) {
+  def this(value: Double, outEdges: Array[A], active: Boolean = true) {
     this()
-    this.id = id
     this.value = value
     this.outEdges = outEdges
     this.active = active
   }
-
-  override def toString(): String = {
-    "%s,%s,%s,%s".format(
-      id, value, active, outEdges.mkString(","))
-  }
 }
+
+class WGVertex() extends Vertex with Serializable {
+  var value: Double = _
+  var edgeIDParts: Array[Int] = _
+  var active: Boolean = _
+
+  def this(value: Double, edgeIDParts: Array[Int], active: Boolean = true) {
+    this()
+    this.value = value
+    this.edgeIDParts = edgeIDParts
+    this.active = active
+  }
+} 
 
 class PRMessage[A]() extends Message[A] with Serializable {
   var targetId: A = _
@@ -82,24 +88,17 @@ class PRMessage[A]() extends Message[A] with Serializable {
   }
 }
 
-class PREdge[A]() extends Edge[A] with Serializable {
-  var targetId: A = _
-
-  def this(targetId: A) {
-    this()
-    this.targetId = targetId
-  }
-
-  override def toString(): String = {
-    targetId.toString()
-  }
-}
-
 class PRKryoRegistrator[A] extends KryoRegistrator {
   def registerClasses(kryo: Kryo) {
     kryo.register(classOf[PRVertex[A]])
     kryo.register(classOf[PRMessage[A]])
-    kryo.register(classOf[PREdge[A]])
+  }
+}
+
+class WGKryoRegistrator extends KryoRegistrator {
+  def registerClasses(k: Kryo) {
+    k.register(classOf[WGVertex])
+    k.register(classOf[Tuple2[Int, WGVertex]])
   }
 }
 

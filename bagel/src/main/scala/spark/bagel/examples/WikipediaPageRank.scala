@@ -1,4 +1,4 @@
-package spark.bagel.examples
+/*package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -85,3 +85,4 @@ object WikipediaPageRank {
   }
 }
 
+*/

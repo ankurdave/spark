@@ -8,9 +8,8 @@ import spark.bagel.Bagel._
 
 import scala.collection.mutable.ArrayBuffer
 
+import java.io.FileOutputStream
 import java.net.URL
-
-import com.esotericsoftware.kryo._
 
 import it.unimi.dsi.fastutil.io.BinIO
 import it.unimi.dsi.fastutil.objects.ObjectList
@@ -20,13 +19,14 @@ import it.unimi.dsi.webgraph.BVGraph
 
 object WebGraphParser {
   def main(args: Array[String]) {
-    if (args.length < 1) {
+    if (args.length < 2) {
       System.err.println(
-        "Usage: WebGraphParser <graphBaseName> > <outputFile>")
+        "Usage: WebGraphParser <graphBaseName> <outputFile>")
       System.exit(-1)
     }
 
     val graphBaseName = args(0)
+    val outputFile = args(1)
 
     System.err.print("Loading fcl...")
     val list =
@@ -39,22 +39,29 @@ object WebGraphParser {
     System.err.println("done.")
 
     val numVertices = graph.numNodes()
+
+    System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
+    val stream = (new KryoSerializer().newInstance()
+                  .outputStream(new FileOutputStream(outputFile)))
+
     System.err.print("Parsing %d nodes...".format(numVertices))
     for (i <- 0 until numVertices) {
-      val outEdges = getSuccessors(i, graph).map(
-        targetId => new PREdge( (targetId, getNodePartition(targetId, list))))
+      val outEdges = getSuccessors(i, graph).flatMap(
+        targetId => List(targetId, getNodePartition(targetId, list)))
       val partition = getNodePartition(i, list)
-      val key = (i, partition)
-      val entry = (key, new PRVertex(key, 1.0 / numVertices, outEdges))
-      println(entry)
+      val key = Array(i, partition)
+      val entry = (key, new WGVertex(1.0 / numVertices, outEdges.toArray))
+
+      stream.writeObject(entry)
 
       if (i % 10000 == 0) {
         System.err.print(".")
       }
       if (i % 1000000 == 0) {
-        System.err.print(i)
+        System.err.print("\n" + i)
       }
     }
+    stream.close()
     System.err.println("done.")
   }
 

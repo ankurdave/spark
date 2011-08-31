@@ -1,4 +1,4 @@
-package spark.bagel.examples
+/*package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -93,3 +93,4 @@ object MinCombiner extends Combiner[SPMessage, Int] with Serializable {
 class SPVertex(val id: String, val value: Int, val outEdges: Seq[SPEdge], val active: Boolean) extends Vertex[String] with Serializable
 class SPEdge(val targetId: String, val value: Int) extends Edge[String] with Serializable
 class SPMessage(val targetId: String, val value: Int) extends Message[String] with Serializable
+*/
