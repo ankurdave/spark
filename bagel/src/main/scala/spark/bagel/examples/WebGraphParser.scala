@@ -19,14 +19,15 @@ import it.unimi.dsi.webgraph.BVGraph
 
 object WebGraphParser {
   def main(args: Array[String]) {
-    if (args.length < 2) {
+    if (args.length < 3) {
       System.err.println(
-        "Usage: WebGraphParser <graphBaseName> <outputFile>")
+        "Usage: WebGraphParser <graphBaseName> <outputDir> <numSplits>")
       System.exit(-1)
     }
 
     val graphBaseName = args(0)
-    val outputFile = args(1)
+    val outputDir = args(1)
+    val numSplits = args(2).toInt
 
     System.err.print("Loading fcl...")
     val list =
@@ -41,11 +42,19 @@ object WebGraphParser {
     val numVertices = graph.numNodes()
 
     System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
-    val stream = (new KryoSerializer().newInstance()
-                  .outputStream(new FileOutputStream(outputFile)))
+    val numVerticesPerSplit = numVertices / numSplits
+    var split = 0
+    val serializer = new KryoSerializer().newInstance()
+    var stream = serializer.outputStream(
+      new FileOutputStream(getFilename(split, outputDir)))
 
     System.err.print("Parsing %d nodes...".format(numVertices))
     for (i <- 0 until numVertices) {
+      if (i % numVerticesPerSplit == 0 && i != 0) {
+        split += 1
+        stream = serializer.outputStream(
+          new FileOutputStream(getFilename(split, outputDir)))
+      }
       val outEdges = getSuccessors(i, graph).flatMap(
         targetId => List(targetId, getNodePartition(targetId, list)))
       val partition = getNodePartition(i, list)
@@ -82,5 +91,9 @@ object WebGraphParser {
     val host = new URL(url).getHost()
 //    System.err.println("Vertex %d has host %s".format(i, host))
     host.hashCode()
+  }
+
+  def getFilename(split: Int, dir: String): String = {
+    "%s/part-%05d".format(dir, split)
   }
 }
