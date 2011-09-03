@@ -11,7 +11,13 @@ class SerializingCache extends Cache with Logging {
 
   override def put(key: Any, value: Any) {
     val ser = SparkEnv.get.serializer.newInstance()
-    bmc.put(key, ser.serialize(value))
+    try {
+      bmc.put(key, ser.serialize(value))
+    } catch {
+      case e: com.esotericsoftware.kryo.SerializationException =>
+        logError("Couldn't serialize " + key.toString)
+        throw e
+    }
   }
 
   override def get(key: Any): Any = {
