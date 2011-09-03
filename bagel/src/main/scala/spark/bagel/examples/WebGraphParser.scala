@@ -65,7 +65,7 @@ object WebGraphParser {
         targetId => getIdPartition(targetId, list))
       val key = getIdPartition(i, list)
       if (seen.contains(key)) {
-        System.err.println("Duplicate key %ld".format(key))
+        System.err.println("Duplicate key %s".format(key.toString))
       } else {
         seen += key
       }
