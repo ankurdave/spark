@@ -1,4 +1,4 @@
-/*package spark.bagel.examples
+package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -6,16 +6,10 @@ import spark.SparkContext._
 import spark.bagel._
 import spark.bagel.Bagel._
 
-import scala.collection.mutable.ArrayBuffer
-
-import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
-
-import it.unimi.dsi.webgraph.{ImmutableGraph,BVGraph}
-
 object WebPageRank {
   def main(args: Array[String]) {
     if (args.length < 5) {
-      System.err.println("Usage: WebPageRank <input> <threshold> <numSplits> <host> <usePartitioner>")
+      System.err.println("Usage: WebPageRank <inputFile> <threshold> <numSplits> <host> <usePartitioner>")
       System.exit(-1)
     }
 
@@ -29,18 +23,7 @@ object WebPageRank {
     System.setProperty("spark.serialization", "spark.KryoSerialization")
     System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
 
-    val stream = (new KryoSerializer().newInstance()
-                  .inputStream(new FileInputStream(inputFile)))
-    val vertices = sc.textFile(inputFile).map(line => {
-      val InputLine(id, partition, value, active, rest) = line
-      val key = (id.toInt, partition.toInt)
-      val outEdges = EdgeEntry.findAllIn(rest).map {
-        case EdgeEntry(targetId, targetPartition) =>
-          new PREdge((targetId.toInt, targetPartition.toInt))
-      }.toList
-      (key, new PRVertex(key, value.toDouble, ArrayBuffer(outEdges: _*),
-                         active.toBoolean))
-    }).cache
+    val vertices = sc.objectFile[(Long, PRVertex[Long])](inputFile, numSplits).cache
 
     println("Counting vertices...")
     val numVertices = vertices.count()
@@ -48,11 +31,11 @@ object WebPageRank {
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(List[((Int, Int), PRMessage[(Int, Int)])]())
-    val util = new PageRankUtils[(Int, Int)]
+    val messages = sc.parallelize(List[(Long, PRMessage[Long])]())
+    val util = new PageRankUtils[Long]
     val result =
       Bagel.run(
-        sc, vertices, messages, combiner = new PRCombiner[(Int, Int)](),
+        sc, vertices, messages, combiner = new PRCombiner[Long](),
         partitioner = new CustomPartitioner(numSplits), numSplits = numSplits)(
         util.computeWithCombiner(numVertices, epsilon))
 
@@ -67,4 +50,3 @@ object WebPageRank {
     println(top)
   }
 }
-*/

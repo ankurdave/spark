@@ -64,19 +64,6 @@ class PRVertex[A]() extends Vertex with Serializable {
   }
 }
 
-class WGVertex() extends Vertex with Serializable {
-  var value: Double = _
-  var edgeIDParts: Array[Int] = _
-  var active: Boolean = _
-
-  def this(value: Double, edgeIDParts: Array[Int], active: Boolean = true) {
-    this()
-    this.value = value
-    this.edgeIDParts = edgeIDParts
-    this.active = active
-  }
-} 
-
 class PRMessage[A]() extends Message[A] with Serializable {
   var targetId: A = _
   var value: Double = _
@@ -97,17 +84,17 @@ class PRKryoRegistrator[A] extends KryoRegistrator {
 
 class WGKryoRegistrator extends KryoRegistrator {
   def registerClasses(k: Kryo) {
-    k.register(classOf[WGVertex])
-    k.register(classOf[Tuple2[Int, WGVertex]])
+    k.register(classOf[PRVertex[Long]])
+    k.register(classOf[Tuple2[Long, PRVertex[Long]]])
   }
 }
 
 class CustomPartitioner(partitions: Int) extends Partitioner {
   def numPartitions = partitions
 
-  def getPartition(key: Any) = {
+  def getPartition(key: Any): Int = {
     val hash = key match {
-      case (id: Int, partition: Int) => partition
+      case k: Long => (k & 0x00000000FFFFFFFFL).toInt
       case _ => key.hashCode
     }
 

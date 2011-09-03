@@ -11,6 +11,13 @@ import scala.collection.mutable.ArrayBuffer
 import java.io.FileOutputStream
 import java.net.URL
 
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.Path
+import org.apache.hadoop.io.BytesWritable
+import org.apache.hadoop.io.NullWritable
+import org.apache.hadoop.io.SequenceFile
+
 import it.unimi.dsi.fastutil.io.BinIO
 import it.unimi.dsi.fastutil.objects.ObjectList
 import it.unimi.dsi.lang.MutableString
@@ -21,13 +28,16 @@ object WebGraphParser {
   def main(args: Array[String]) {
     if (args.length < 3) {
       System.err.println(
-        "Usage: WebGraphParser <graphBaseName> <outputDir> <numSplits>")
+        "Usage: WebGraphParser <graphBaseName> <outputFile> <numSplits>")
       System.exit(-1)
     }
 
     val graphBaseName = args(0)
-    val outputDir = args(1)
+    val outputFile = args(1)
     val numSplits = args(2).toInt
+
+    System.setProperty("spark.serialization", "spark.KryoSerialization")
+    System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
 
     System.err.print("Loading fcl...")
     val list =
@@ -41,27 +51,23 @@ object WebGraphParser {
 
     val numVertices = graph.numNodes()
 
-    System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
-    val numVerticesPerSplit = numVertices / numSplits
-    var split = 0
-    val serializer = new KryoSerializer().newInstance()
-    var stream = serializer.outputStream(
-      new FileOutputStream(getFilename(split, outputDir)))
+    val config = new Configuration()
+    val fs = FileSystem.get(config)
+    val writer = SequenceFile.createWriter(
+      fs, config, new Path(outputFile), classOf[NullWritable], classOf[BytesWritable])
+    val keyWritable = new NullWritable()
+    val valWritable = new BytesWritable()
 
     System.err.print("Parsing %d nodes...".format(numVertices))
     for (i <- 0 until numVertices) {
-      if (i % numVerticesPerSplit == 0 && i != 0) {
-        split += 1
-        stream = serializer.outputStream(
-          new FileOutputStream(getFilename(split, outputDir)))
-      }
-      val outEdges = getSuccessors(i, graph).flatMap(
-        targetId => List(targetId, getNodePartition(targetId, list)))
-      val partition = getNodePartition(i, list)
-      val key = Array(i, partition)
-      val entry = (key, new WGVertex(1.0 / numVertices, outEdges.toArray))
+      val outEdges = getSuccessors(i, graph).map(
+        targetId => getIdPartition(targetId, list))
+      val key = getIdPartition(i, list)
+      val entry = (key, new PRVertex(1.0 / numVertices, outEdges.toArray))
+      val bytes = Utils.serialize(entry)
 
-      stream.writeObject(entry)
+      valWritable.set(bytes, 0, bytes.length)
+      writer.append(keyWritable, valWritable)
 
       if (i % 10000 == 0) {
         System.err.print(".")
@@ -70,7 +76,7 @@ object WebGraphParser {
         System.err.print("\n" + i)
       }
     }
-    stream.close()
+    writer.close()
     System.err.println("done.")
   }
 
@@ -86,14 +92,10 @@ object WebGraphParser {
     result
   }
 
-  def getNodePartition(i: Int, list: ObjectList[CharSequence]): Int = {
+  def getIdPartition(i: Int, list: ObjectList[CharSequence]): Long = {
     val url = list.get(i).toString()
     val host = new URL(url).getHost()
 //    System.err.println("Vertex %d has host %s".format(i, host))
-    host.hashCode()
-  }
-
-  def getFilename(split: Int, dir: String): String = {
-    "%s/part-%05d".format(dir, split)
+    i.toLong << 32 | host.hashCode()
   }
 }

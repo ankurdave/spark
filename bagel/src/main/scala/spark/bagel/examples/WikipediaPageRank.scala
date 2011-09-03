@@ -1,4 +1,4 @@
-/*package spark.bagel.examples
+package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -6,7 +6,6 @@ import spark.SparkContext._
 import spark.bagel._
 import spark.bagel.Bagel._
 
-import scala.collection.mutable.ArrayBuffer
 import scala.xml.{XML,NodeSeq}
 
 import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
@@ -52,9 +51,9 @@ object WikipediaPageRank {
               System.err.println("Article \""+title+"\" has malformed XML in body:\n"+body)
             NodeSeq.Empty
           }
-      val outEdges = ArrayBuffer(links.map(link => new PREdge(new String(link.text))): _*)
+      val outEdges = links.map(link => new String(link.text)).toArray
       val id = new String(title)
-      (id, new PRVertex(id, 1.0 / numVertices, outEdges))
+      (id, new PRVertex(1.0 / numVertices, outEdges))
     }).cache
     println("Done parsing input file.")
 
@@ -79,10 +78,8 @@ object WikipediaPageRank {
     val top =
       (result
        .filter { case (id, vertex) => vertex.value >= threshold }
-       .map { case (id, vertex) => "%s\t%s\n".format(vertex.id, vertex.value) }
+       .map { case (id, vertex) => "%s\t%s\n".format(id, vertex.value) }
        .collect.mkString)
     println(top)
   }
 }
-
-*/

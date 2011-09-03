@@ -1,4 +1,4 @@
-/*package spark.bagel.examples
+package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -35,9 +35,9 @@ object ShortestPath {
            val outEdges = lines.collect {
              case Array(_, targetId, edgeValue) =>
                new SPEdge(targetId, edgeValue.toInt)
-           }
+           }.toArray
            
-           (vertexId, new SPVertex(vertexId, Int.MaxValue, outEdges, true))
+           (vertexId, new SPVertex(Int.MaxValue, outEdges, true))
          }
        })
 
@@ -64,16 +64,16 @@ object ShortestPath {
             self.outEdges.map(edge =>
               new SPMessage(edge.targetId, newValue + edge.value))
           else
-            List()
+            Array[SPMessage]()
 
-        (new SPVertex(self.id, newValue, self.outEdges, false), outbox)
+        (new SPVertex(newValue, self.outEdges, false), outbox.toIterable)
     }
     val result = Bagel.run(sc, vertices, messages, combiner = MinCombiner, numSplits = numSplits)(compute)
 
     // Print the result
     System.err.println("Shortest path from "+startVertex+" to all vertices:")
     val shortest = result.map { case (id, vertex) =>
-      "%s\t%s\n".format(vertex.id, vertex.value match {
+      "%s\t%s\n".format(id, vertex.value match {
         case x if x == Int.MaxValue => "inf"
         case x => x
       })}.collect.mkString
@@ -90,7 +90,6 @@ object MinCombiner extends Combiner[SPMessage, Int] with Serializable {
     min(a, b)
 }
 
-class SPVertex(val id: String, val value: Int, val outEdges: Seq[SPEdge], val active: Boolean) extends Vertex[String] with Serializable
-class SPEdge(val targetId: String, val value: Int) extends Edge[String] with Serializable
+class SPVertex(val value: Int, val outEdges: Array[SPEdge], val active: Boolean) extends Vertex with Serializable
+class SPEdge(val targetId: String, val value: Int) extends Serializable
 class SPMessage(val targetId: String, val value: Int) extends Message[String] with Serializable
-*/
