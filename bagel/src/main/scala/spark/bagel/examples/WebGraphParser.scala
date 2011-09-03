@@ -27,7 +27,7 @@ import it.unimi.dsi.webgraph.BVGraph
 
 object WebGraphParser {
   def main(args: Array[String]) {
-    if (args.length < 3) {
+    if (args.length < 2) {
       System.err.println(
         "Usage: WebGraphParser <graphBaseName> <outputFile>")
       System.exit(-1)
@@ -36,7 +36,7 @@ object WebGraphParser {
     val graphBaseName = args(0)
     val outputFile = args(1)
 
-    System.setProperty("spark.serialization", "spark.KryoSerialization")
+    System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
 
     System.err.print("Loading fcl...")

@@ -20,7 +20,7 @@ object WebPageRank {
     val usePartitioner = args(4).toBoolean
     val sc = new SparkContext(host, "WebPageRank")
 
-    System.setProperty("spark.serialization", "spark.KryoSerialization")
+    System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
 
     val vertices = sc.objectFile[(Long, PRVertex[Long])](inputFile, numSplits).cache

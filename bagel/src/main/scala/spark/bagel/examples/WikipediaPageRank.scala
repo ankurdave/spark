@@ -19,7 +19,7 @@ object WikipediaPageRank {
       System.exit(-1)
     }
 
-    System.setProperty("spark.serialization", "spark.KryoSerialization")
+    System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator[String]].getName)
 
     val inputFile = args(0)
