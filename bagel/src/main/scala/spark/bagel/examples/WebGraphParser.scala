@@ -55,7 +55,6 @@ object WebGraphParser {
     val fs = FileSystem.get(new URI(outputFile), config)
     val writer = SequenceFile.createWriter(
       fs, config, new Path(outputFile), classOf[NullWritable], classOf[BytesWritable])
-    val keyWritable = new NullWritable()
     val valWritable = new BytesWritable()
 
     System.err.print("Parsing %d nodes...".format(numVertices))
@@ -67,7 +66,7 @@ object WebGraphParser {
       val bytes = Utils.serialize(entry)
 
       valWritable.set(bytes, 0, bytes.length)
-      writer.append(keyWritable, valWritable)
+      writer.append(NullWritable.get(), valWritable)
 
       if (i % 10000 == 0) {
         System.err.print(".")
