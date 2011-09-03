@@ -91,6 +91,7 @@ class WGKryoRegistrator extends KryoRegistrator {
     k.register(classOf[PRVertex[Long]])
     k.register(classOf[Tuple2[Long, PRVertex[Long]]])
     k.register(classOf[Array[Tuple2[Long, PRVertex[Long]]]])
+    k.register(classOf[scala.collection.mutable.ArraySeq[Int]])
   }
 }
 
