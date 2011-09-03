@@ -62,7 +62,7 @@ object WebGraphParser {
       val outEdges = getSuccessors(i, graph).map(
         targetId => getIdPartition(targetId, list))
       val key = getIdPartition(i, list)
-      val entry = (key, new PRVertex(1.0 / numVertices, outEdges.toArray))
+      val entry = Array((key, new PRVertex(1.0 / numVertices, outEdges.toArray)))
       val bytes = Utils.serialize(entry)
 
       valWritable.set(bytes, 0, bytes.length)

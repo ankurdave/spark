@@ -86,6 +86,7 @@ class WGKryoRegistrator extends KryoRegistrator {
   def registerClasses(k: Kryo) {
     k.register(classOf[PRVertex[Long]])
     k.register(classOf[Tuple2[Long, PRVertex[Long]]])
+    k.register(classOf[Array[Tuple2[Long, PRVertex[Long]]]])
   }
 }
 
