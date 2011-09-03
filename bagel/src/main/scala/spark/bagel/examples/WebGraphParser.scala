@@ -10,6 +10,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import java.io.FileOutputStream
 import java.net.URL
+import java.net.URI
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
@@ -28,13 +29,12 @@ object WebGraphParser {
   def main(args: Array[String]) {
     if (args.length < 3) {
       System.err.println(
-        "Usage: WebGraphParser <graphBaseName> <outputFile> <numSplits>")
+        "Usage: WebGraphParser <graphBaseName> <outputFile>")
       System.exit(-1)
     }
 
     val graphBaseName = args(0)
     val outputFile = args(1)
-    val numSplits = args(2).toInt
 
     System.setProperty("spark.serialization", "spark.KryoSerialization")
     System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
@@ -52,7 +52,7 @@ object WebGraphParser {
     val numVertices = graph.numNodes()
 
     val config = new Configuration()
-    val fs = FileSystem.get(config)
+    val fs = FileSystem.get(new URI(outputFile), config)
     val writer = SequenceFile.createWriter(
       fs, config, new Path(outputFile), classOf[NullWritable], classOf[BytesWritable])
     val keyWritable = new NullWritable()
