@@ -102,6 +102,6 @@ object WebGraphParser {
     val url = list.get(i).toString()
     val host = new URL(url).getHost()
 //    System.err.println("Vertex %d has host %s".format(i, host))
-    i.toLong << 32 | host.hashCode()
+    i.toLong << 32 | host.hashCode().toLong & 0x00000000FFFFFFFFL
   }
 }
