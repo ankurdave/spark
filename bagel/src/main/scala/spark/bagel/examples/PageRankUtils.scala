@@ -62,6 +62,10 @@ class PRVertex[A]() extends Vertex with Serializable {
     this.outEdges = outEdges
     this.active = active
   }
+
+  override def toString(): String = {
+    "PRVertex(value=%f, active=%s)".format(value, active.toString)
+  }
 }
 
 class PRMessage[A]() extends Message[A] with Serializable {

@@ -57,11 +57,18 @@ object WebGraphParser {
       fs, config, new Path(outputFile), classOf[NullWritable], classOf[BytesWritable])
     val valWritable = new BytesWritable()
 
+    val seen = new scala.collection.mutable.HashSet[Long]
+
     System.err.print("Parsing %d nodes...".format(numVertices))
     for (i <- 0 until numVertices) {
       val outEdges = getSuccessors(i, graph).map(
         targetId => getIdPartition(targetId, list))
       val key = getIdPartition(i, list)
+      if (seen.contains(key)) {
+        System.err.println("Duplicate key %ld".format(key))
+      } else {
+        seen += key
+      }
       val entry = Array((key, new PRVertex(1.0 / numVertices, outEdges.toArray)))
       val bytes = Utils.serialize(entry)
 

@@ -128,17 +128,25 @@ object Bagel extends Logging {
     val processed = grouped.flatMapValues {
       case (Seq(), _) => None
       case (Seq(v), c) =>
-          val (newVert, newMsgs) =
-            compute(v, c match {
-              case Seq(comb) => Some(comb)
-              case Seq() => None
-            })
+        val (newVert, newMsgs) =
+          compute(v, c match {
+            case Seq(comb) => Some(comb)
+            case Seq() => None
+          })
 
-          numMsgs += newMsgs.size
-          if (newVert.active)
-            numActiveVerts += 1
+        numMsgs += newMsgs.size
+        if (newVert.active)
+          numActiveVerts += 1
 
-          Some((newVert, newMsgs))
+        Some((newVert, newMsgs))
+
+      case (v, c) =>
+        logError("Multiple vertices had the same ID")
+        for (vert <- v) {
+          logInfo(vert.toString)
+        }
+        throw new Exception()
+
     }.cache
 
     // Force evaluation of processed RDD for accurate performance measurements
