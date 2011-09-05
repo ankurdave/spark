@@ -33,10 +33,13 @@ object WebPageRank {
     val epsilon = 0.01 / numVertices
     val messages = sc.parallelize(Array[(Long, PRMessage[Long])]())
     val util = new PageRankUtils[Long]
+    val partitioner =
+      if (usePartitioner) new CustomPartitioner(numSplits)
+      else new HashPartitioner(numSplits)
     val result =
       Bagel.run(
         sc, vertices, messages, combiner = new PRCombiner[Long](),
-        partitioner = new CustomPartitioner(numSplits), numSplits = numSplits)(
+        partitioner = partitioner, numSplits = numSplits)(
         util.computeWithCombiner(numVertices, epsilon))
 
     // Print the result
