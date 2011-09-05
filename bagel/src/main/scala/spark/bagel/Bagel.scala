@@ -16,7 +16,7 @@ object Bagel extends Logging {
     partitioner: Partitioner,
     numSplits: Int
   )(
-    compute: (V, Option[C], Option[A], Int) => (V, Iterable[M])
+    compute: (V, Option[C], Option[A], Int) => (V, Array[M])
   ): RDD[(I, V)] = {
     val splits = if (numSplits != 0) numSplits else sc.defaultParallelism
 
@@ -61,7 +61,7 @@ object Bagel extends Logging {
     partitioner: Partitioner,
     numSplits: Int
   )(
-    compute: (V, Option[C], Int) => (V, Iterable[M])
+    compute: (V, Option[C], Int) => (V, Array[M])
   ): RDD[(I, V)] = {
     run[I, V, M, C, Nothing](
       sc, vertices, messages, combiner, None, partitioner, numSplits)(
@@ -76,7 +76,7 @@ object Bagel extends Logging {
     combiner: Combiner[M, C],
     numSplits: Int
   )(
-    compute: (V, Option[C], Int) => (V, Iterable[M])
+    compute: (V, Option[C], Int) => (V, Array[M])
   ): RDD[(I, V)] = {
     val part = new HashPartitioner(numSplits)
     run[I, V, M, C, Nothing](
@@ -90,12 +90,12 @@ object Bagel extends Logging {
     messages: RDD[(I, M)],
     numSplits: Int
   )(
-    compute: (V, Option[ArrayBuffer[M]], Int) => (V, Iterable[M])
+    compute: (V, Option[Array[M]], Int) => (V, Array[M])
   ): RDD[(I, V)] = {
     val part = new HashPartitioner(numSplits)
-    run[I, V, M, ArrayBuffer[M], Nothing](
+    run[I, V, M, Array[M], Nothing](
       sc, vertices, messages, new DefaultCombiner(), None, part, numSplits)(
-      addAggregatorArg[I, V, M, ArrayBuffer[M]](compute))
+      addAggregatorArg[I, V, M, Array[M]](compute))
   }
 
   /**
@@ -121,8 +121,8 @@ object Bagel extends Logging {
   private def comp[I : Manifest, V <: Vertex, M <: Message[I], C](
     sc: SparkContext,
     grouped: RDD[(I, (Seq[V], Seq[C]))],
-    compute: (V, Option[C]) => (V, Iterable[M])
-  ): (RDD[(I, (V, Iterable[M]))], Int, Int) = {
+    compute: (V, Option[C]) => (V, Array[M])
+  ): (RDD[(I, (V, Array[M]))], Int, Int) = {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
     val processed = grouped.flatMapValues {
@@ -162,8 +162,8 @@ object Bagel extends Logging {
   private def addAggregatorArg[
     I, V <: Vertex : Manifest, M <: Message[I] : Manifest, C
   ](
-    compute: (V, Option[C], Int) => (V, Iterable[M])
-  ): (V, Option[C], Option[Nothing], Int) => (V, Iterable[M]) = {
+    compute: (V, Option[C], Int) => (V, Array[M])
+  ): (V, Option[C], Option[Nothing], Int) => (V, Array[M]) = {
     (vert: V, msgs: Option[C], aggregated: Option[Nothing], superstep: Int) =>
       compute(vert, msgs, superstep)
   }
@@ -180,13 +180,13 @@ trait Aggregator[V, A] {
   def mergeAggregators(a: A, b: A): A
 }
 
-class DefaultCombiner[M] extends Combiner[M, ArrayBuffer[M]] with Serializable {
-  def createCombiner(msg: M): ArrayBuffer[M] =
-    ArrayBuffer(msg)
-  def mergeMsg(combiner: ArrayBuffer[M], msg: M): ArrayBuffer[M] =
-    combiner += msg
-  def mergeCombiners(a: ArrayBuffer[M], b: ArrayBuffer[M]): ArrayBuffer[M] =
-    a ++= b
+class DefaultCombiner[M : Manifest] extends Combiner[M, Array[M]] with Serializable {
+  def createCombiner(msg: M): Array[M] =
+    Array(msg)
+  def mergeMsg(combiner: Array[M], msg: M): Array[M] =
+    combiner :+ msg
+  def mergeCombiners(a: Array[M], b: Array[M]): Array[M] =
+    a ++ b
 }
 
 /**

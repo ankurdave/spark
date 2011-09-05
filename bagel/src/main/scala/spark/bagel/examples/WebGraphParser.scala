@@ -6,8 +6,6 @@ import spark.SparkContext._
 import spark.bagel._
 import spark.bagel.Bagel._
 
-import scala.collection.mutable.ArrayBuffer
-
 import java.io.FileOutputStream
 import java.net.URL
 import java.net.URI
@@ -86,14 +84,12 @@ object WebGraphParser {
     System.err.println("done.")
   }
 
-  def getSuccessors(i: Int, g: BVGraph): ArrayBuffer[Int] = {
-    val result = new ArrayBuffer[Int]
+  def getSuccessors(i: Int, g: BVGraph): Array[Int] = {
     val successors = g.successors(i)
-    var d = g.outdegree(i) - 1
-    //    System.err.println("Vertex " + i + " has outdegree " + d)
-    while (d > 0) {
-      result.append(successors.nextInt())
-      d -= 1
+    var d = g.outdegree(i)
+    val result = new Array[Int](d)
+    for (i <- 0 until d) {
+      result(i) = successors.nextInt()
     }
     result
   }

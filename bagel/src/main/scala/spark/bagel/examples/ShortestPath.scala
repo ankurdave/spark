@@ -66,7 +66,7 @@ object ShortestPath {
           else
             Array[SPMessage]()
 
-        (new SPVertex(newValue, self.outEdges, false), outbox.toIterable)
+        (new SPVertex(newValue, self.outEdges, false), outbox)
     }
     val result = Bagel.run(sc, vertices, messages, combiner = MinCombiner, numSplits = numSplits)(compute)
 

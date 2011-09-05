@@ -31,7 +31,7 @@ object WebPageRank {
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(List[(Long, PRMessage[Long])]())
+    val messages = sc.parallelize(Array[(Long, PRMessage[Long])]())
     val util = new PageRankUtils[Long]
     val result =
       Bagel.run(

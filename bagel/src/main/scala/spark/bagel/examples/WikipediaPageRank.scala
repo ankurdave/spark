@@ -59,7 +59,7 @@ object WikipediaPageRank {
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(List[(String, PRMessage[String])]())
+    val messages = sc.parallelize(Array[(String, PRMessage[String])]())
     val utils = new PageRankUtils[String]
     val result =
       if (noCombiner) {

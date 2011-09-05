@@ -6,7 +6,6 @@ import spark.SparkContext._
 import spark.bagel._
 import spark.bagel.Bagel._
 
-import scala.collection.mutable.ArrayBuffer
 import scala.xml.{XML,NodeSeq}
 
 import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
@@ -16,7 +15,7 @@ import com.esotericsoftware.kryo._
 class PageRankUtils[A] extends Serializable {
   def computeWithCombiner(numVertices: Long, epsilon: Double)(
     self: PRVertex[A], messageSum: Option[Double], superstep: Int
-  ): (PRVertex[A], Iterable[PRMessage[A]]) = {
+  ): (PRVertex[A], Array[PRMessage[A]]) = {
     val newValue = messageSum match {
       case Some(msgSum) if msgSum != 0 =>
         0.15 / numVertices + 0.85 * msgSum
@@ -25,17 +24,17 @@ class PageRankUtils[A] extends Serializable {
 
     val terminate = (superstep >= 10 && (newValue - self.value).abs < epsilon) || superstep >= 30
 
-    val outbox: Iterable[PRMessage[A]] =
+    val outbox: Array[PRMessage[A]] =
       if (!terminate)
         self.outEdges.map(targetId =>
           new PRMessage(targetId, newValue / self.outEdges.size))
       else
-        ArrayBuffer[PRMessage[A]]()
+        Array[PRMessage[A]]()
 
     (new PRVertex(newValue, self.outEdges, !terminate), outbox)
   }
 
-  def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messages: Option[ArrayBuffer[PRMessage[A]]], superstep: Int): (PRVertex[A], Iterable[PRMessage[A]]) =
+  def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messages: Option[Array[PRMessage[A]]], superstep: Int): (PRVertex[A], Array[PRMessage[A]]) =
     computeWithCombiner(numVertices, epsilon)(self, messages match {
       case Some(msgs) => Some(msgs.map(_.value).sum)
       case None => None
