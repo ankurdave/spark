@@ -12,50 +12,50 @@ import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInp
 
 import com.esotericsoftware.kryo._
 
-class PageRankUtils[A] extends Serializable {
+class PageRankUtils extends Serializable {
   def computeWithCombiner(numVertices: Long, epsilon: Double)(
-    self: PRVertex[A], messageSum: Option[Double], superstep: Int
-  ): (PRVertex[A], Array[PRMessage[A]]) = {
+    self: PRVertex, messageSum: Option[Double], superstep: Int
+  ): (PRVertex, Array[PRMessage]) = {
     val newValue = messageSum match {
       case Some(msgSum) if msgSum != 0 =>
         0.15 / numVertices + 0.85 * msgSum
       case _ => self.value
     }
 
-    val terminate = (superstep >= 10 && (newValue - self.value).abs < epsilon) || superstep >= 30
+    val terminate = superstep >= 2
 
-    val outbox: Array[PRMessage[A]] =
+    val outbox: Array[PRMessage] =
       if (!terminate)
         self.outEdges.map(targetId =>
           new PRMessage(targetId, newValue / self.outEdges.size))
       else
-        Array[PRMessage[A]]()
+        Array[PRMessage]()
 
     (new PRVertex(newValue, self.outEdges, !terminate), outbox)
   }
 
-  def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex[A], messages: Option[Array[PRMessage[A]]], superstep: Int): (PRVertex[A], Array[PRMessage[A]]) =
+  def computeNoCombiner(numVertices: Long, epsilon: Double)(self: PRVertex, messages: Option[Array[PRMessage]], superstep: Int): (PRVertex, Array[PRMessage]) =
     computeWithCombiner(numVertices, epsilon)(self, messages match {
       case Some(msgs) => Some(msgs.map(_.value).sum)
       case None => None
     }, superstep)
 }
 
-class PRCombiner[A] extends Combiner[PRMessage[A], Double] with Serializable {
-  def createCombiner(msg: PRMessage[A]): Double =
+class PRCombiner extends Combiner[PRMessage, Double] with Serializable {
+  def createCombiner(msg: PRMessage): Double =
     msg.value
-  def mergeMsg(combiner: Double, msg: PRMessage[A]): Double =
+  def mergeMsg(combiner: Double, msg: PRMessage): Double =
     combiner + msg.value
   def mergeCombiners(a: Double, b: Double): Double =
     a + b
 }
 
-class PRVertex[A]() extends Vertex with Serializable {
+class PRVertex() extends Vertex with Serializable {
   var value: Double = _
-  var outEdges: Array[A] = _
+  var outEdges: Array[Long] = _
   var active: Boolean = _
 
-  def this(value: Double, outEdges: Array[A], active: Boolean = true) {
+  def this(value: Double, outEdges: Array[Long], active: Boolean = true) {
     this()
     this.value = value
     this.outEdges = outEdges
@@ -67,30 +67,30 @@ class PRVertex[A]() extends Vertex with Serializable {
   }
 }
 
-class PRMessage[A]() extends Message[A] with Serializable {
-  var targetId: A = _
+class PRMessage() extends Message with Serializable {
+  var targetId: Long = _
   var value: Double = _
 
-  def this(targetId: A, value: Double) {
+  def this(targetId: Long, value: Double) {
     this()
     this.targetId = targetId
     this.value = value
   }
 }
 
-class PRKryoRegistrator[A] extends KryoRegistrator {
+class PRKryoRegistrator extends KryoRegistrator {
   def registerClasses(kryo: Kryo) {
-    kryo.register(classOf[PRVertex[A]])
-    kryo.register(classOf[PRMessage[A]])
+    kryo.register(classOf[PRVertex])
+    kryo.register(classOf[PRMessage])
   }
 }
 
 class WGKryoRegistrator extends KryoRegistrator {
   def registerClasses(k: Kryo) {
-    k.register(classOf[PRVertex[Long]])
-    k.register(classOf[PRMessage[Long]])
-    k.register(classOf[Tuple2[Long, PRVertex[Long]]])
-    k.register(classOf[Array[Tuple2[Long, PRVertex[Long]]]])
+    k.register(classOf[PRVertex])
+    k.register(classOf[PRMessage])
+    k.register(classOf[Tuple2[Long, PRVertex]])
+    k.register(classOf[Array[Tuple2[Long, PRVertex]]])
     k.register(classOf[scala.collection.mutable.ArraySeq[Int]])
   }
 }

@@ -13,6 +13,9 @@ object WebPageRank {
       System.exit(-1)
     }
 
+    System.setProperty("spark.serializer", "spark.KryoSerializer")
+    System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
+
     val inputFile = args(0)
     val threshold = args(1).toDouble
     val numSplits = args(2).toInt
@@ -20,10 +23,7 @@ object WebPageRank {
     val usePartitioner = args(4).toBoolean
     val sc = new SparkContext(host, "WebPageRank")
 
-    System.setProperty("spark.serializer", "spark.KryoSerializer")
-    System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
-
-    val vertices = sc.objectFile[(Long, PRVertex[Long])](inputFile, numSplits).cache
+    val vertices = sc.objectFile[(Long, PRVertex)](inputFile, numSplits).cache
 
     println("Counting vertices...")
     val numVertices = vertices.count()
@@ -31,14 +31,14 @@ object WebPageRank {
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(Array[(Long, PRMessage[Long])]())
-    val util = new PageRankUtils[Long]
+    val messages = sc.parallelize(Array[(Long, PRMessage)]())
+    val util = new PageRankUtils
     val partitioner =
       if (usePartitioner) new CustomPartitioner(numSplits)
       else new HashPartitioner(numSplits)
     val result =
       Bagel.run(
-        sc, vertices, messages, combiner = new PRCombiner[Long](),
+        sc, vertices, messages, combiner = new PRCombiner(),
         partitioner = partitioner, numSplits = numSplits)(
         util.computeWithCombiner(numVertices, epsilon))
 
