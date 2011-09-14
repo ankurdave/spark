@@ -32,8 +32,7 @@ object Bagel extends Logging {
       val combinedMsgs = msgs.combineByKey(
         combiner.createCombiner, combiner.mergeMsg, combiner.mergeCombiners,
         splits, partitioner)
-      println("partitioner: " + combinedMsgs.partitioner)
-      val grouped = verts.groupWith(combinedMsgs)
+      val grouped = combinedMsgs.groupWith(verts)
       val (processed, numMsgs, numActiveVerts) =
         comp[Long, V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
 
@@ -120,14 +119,14 @@ object Bagel extends Logging {
    */
   private def comp[I : Manifest, V <: Vertex, M <: Message, C](
     sc: SparkContext,
-    grouped: RDD[(I, (Seq[V], Seq[C]))],
+    grouped: RDD[(I, (Seq[C], Seq[V]))],
     compute: (V, Option[C]) => (V, Array[M])
   ): (RDD[(I, (V, Array[M]))], Int, Int) = {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
     val processed = grouped.flatMapValues {
-      case (Seq(), _) => None
-      case (Seq(v), c) =>
+      case (_, Seq()) => None
+      case (c, Seq(v)) =>
         val (newVert, newMsgs) =
           compute(v, c match {
             case Seq(comb) => Some(comb)
@@ -140,7 +139,7 @@ object Bagel extends Logging {
 
         Some((newVert, newMsgs))
 
-      case (v, c) =>
+      case (c, v) =>
         logError("Multiple vertices had the same ID")
         for (vert <- v) {
           logInfo(vert.toString)
