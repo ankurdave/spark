@@ -139,14 +139,9 @@ class PRSerializerInstance extends SerializerInstance {
 
 class PRSerializationStream(os: OutputStream) extends SerializationStream {
   val dos = new DataOutputStream(os)
-  var n = 0
 
   def writeObject[T](t: T): Unit = t match {
     case (id: Long, vs: ArrayBuffer[_]) => {
-      if (n % 10000 == 0)
-        println("Serializing vertex: " + t)
-      n += 1
-
       dos.writeBoolean(false) // vertex
       dos.writeLong(id)
       val vert = vs(0).asInstanceOf[PRVertex] // assume 1 vertex
@@ -158,10 +153,6 @@ class PRSerializationStream(os: OutputStream) extends SerializationStream {
       }
     }
     case (targetId: Long, value: Double) => {
-      if (n % 10000 == 0)
-        println("Serializing message: " + t)
-      n += 1
-
       dos.writeBoolean(true) // message
       dos.writeLong(targetId)
       dos.writeDouble(value)
@@ -174,20 +165,14 @@ class PRSerializationStream(os: OutputStream) extends SerializationStream {
 
 class PRDeserializationStream(is: InputStream) extends DeserializationStream {
   val dis = new DataInputStream(is)
-  var n = 0
 
   def readObject[T](): T = {
     val isMessage = dis.readBoolean()
     if (isMessage) {
       val targetId = dis.readLong()
       val value = dis.readDouble()
-      val message = (targetId, value)
 
-      if (n % 10000 == 0)
-        println("Deserializing message: " + message)
-      n += 1
-
-      message.asInstanceOf[T]
+      (targetId, value).asInstanceOf[T]
     } else {
       val id = dis.readLong()
       val value = dis.readDouble()
@@ -197,13 +182,8 @@ class PRDeserializationStream(is: InputStream) extends DeserializationStream {
       for (i <- 0 until numEdges) {
         outEdges(i) = dis.readLong()
       }
-      val vertex = (id, ArrayBuffer(new PRVertex(value, outEdges, active)))
 
-      if (n % 10000 == 0)
-        println("Deserializing vertex: " + vertex)
-      n += 1
-
-      vertex.asInstanceOf[T]
+      (id, ArrayBuffer(new PRVertex(value, outEdges, active))).asInstanceOf[T]
     }
   }
 
