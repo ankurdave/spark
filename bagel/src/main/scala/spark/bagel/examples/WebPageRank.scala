@@ -13,7 +13,7 @@ object WebPageRank {
       System.exit(-1)
     }
 
-    System.setProperty("spark.serializer", "spark.KryoSerializer")
+    System.setProperty("spark.serializer", "spark.bagel.examples.PRSerializer")
     System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
 
     val inputFile = args(0)

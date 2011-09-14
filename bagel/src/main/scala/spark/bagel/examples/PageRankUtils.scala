@@ -6,9 +6,9 @@ import spark.SparkContext._
 import spark.bagel._
 import spark.bagel.Bagel._
 
-import scala.xml.{XML,NodeSeq}
+import scala.collection.mutable.ArrayBuffer
 
-import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
+import java.io.{InputStream, OutputStream, DataInputStream, DataOutputStream}
 
 import com.esotericsoftware.kryo._
 
@@ -63,7 +63,7 @@ class PRVertex() extends Vertex with Serializable {
   }
 
   override def toString(): String = {
-    "PRVertex(value=%f, active=%s)".format(value, active.toString)
+    "PRVertex(value=%f, outEdges.length=%d, active=%s)".format(value, outEdges.length, active.toString)
   }
 }
 
@@ -113,4 +113,99 @@ class CustomPartitioner(partitions: Int) extends Partitioner {
       c.numPartitions == numPartitions
     case _ => false
   }
+}
+
+class PRSerializer extends spark.Serializer {
+  def newInstance(): SerializerInstance = new PRSerializerInstance()
+}
+
+class PRSerializerInstance extends SerializerInstance {
+  def serialize[T](t: T): Array[Byte] = {
+    throw new UnsupportedOperationException()
+  }
+
+  def deserialize[T](bytes: Array[Byte]): T = {
+    throw new UnsupportedOperationException()
+  }
+
+  def outputStream(s: OutputStream): SerializationStream = {
+    new PRSerializationStream(s)
+  }
+
+  def inputStream(s: InputStream): DeserializationStream = {
+    new PRDeserializationStream(s)
+  }
+}
+
+class PRSerializationStream(os: OutputStream) extends SerializationStream {
+  val dos = new DataOutputStream(os)
+  var n = 0
+
+  def writeObject[T](t: T): Unit = t match {
+    case (id: Long, vs: ArrayBuffer[_]) => {
+      if (n % 10000 == 0)
+        println("Serializing vertex: " + t)
+      n += 1
+
+      dos.writeBoolean(false) // vertex
+      dos.writeLong(id)
+      val vert = vs(0).asInstanceOf[PRVertex] // assume 1 vertex
+      dos.writeDouble(vert.value)
+      dos.writeBoolean(vert.active)
+      dos.writeInt(vert.outEdges.length)
+      for (edge <- vert.outEdges) {
+        dos.writeLong(edge)
+      }
+    }
+    case (targetId: Long, value: Double) => {
+      if (n % 10000 == 0)
+        println("Serializing message: " + t)
+      n += 1
+
+      dos.writeBoolean(true) // message
+      dos.writeLong(targetId)
+      dos.writeDouble(value)
+    }
+  }
+
+  def flush() { dos.flush() }
+  def close() { dos.close() }
+}
+
+class PRDeserializationStream(is: InputStream) extends DeserializationStream {
+  val dis = new DataInputStream(is)
+  var n = 0
+
+  def readObject[T](): T = {
+    val isMessage = dis.readBoolean()
+    if (isMessage) {
+      val targetId = dis.readLong()
+      val value = dis.readDouble()
+      val message = (targetId, value)
+
+      if (n % 10000 == 0)
+        println("Deserializing message: " + message)
+      n += 1
+
+      message.asInstanceOf[T]
+    } else {
+      val id = dis.readLong()
+      val value = dis.readDouble()
+      val active = dis.readBoolean()
+      val numEdges = dis.readInt()
+      val outEdges = new Array[Long](numEdges)
+      for (i <- 0 until numEdges) {
+        outEdges(i) = dis.readLong()
+      }
+      val vertex = (id, ArrayBuffer(new PRVertex(value, outEdges, active)))
+
+      if (n % 10000 == 0)
+        println("Deserializing vertex: " + vertex)
+      n += 1
+
+      vertex.asInstanceOf[T]
+    }
+  }
+
+  def close() { dis.close() }
 }
