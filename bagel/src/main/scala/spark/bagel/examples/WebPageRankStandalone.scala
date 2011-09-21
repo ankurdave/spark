@@ -28,20 +28,19 @@ object WebPageRankStandalone {
     val usePartitioner = args(5).toBoolean
     val sc = new SparkContext(host, "WebPageRankStandalone")
 
-    val startTime = System.currentTimeMillis
-
     val vertices = sc.objectFile[(Long, PRVertex)](inputFile, numSplits).cache()
 
     val n = vertices.count()
     val defaultRank = 1.0 / n
     val a = 0.15
-    val links = vertices.map { case (id, v) => (id, v.outEdges) }.cache()
-    var ranks = vertices.map { case (id, v) => (id, v.value) }
     val partitioner =
       if (usePartitioner) new CustomPartitioner(numSplits)
       else new HashPartitioner(numSplits)
+    val links = vertices.map { case (id, v) => (id, v.outEdges) }.partitionBy(partitioner).cache()
+    var ranks = links.mapValues { edges => defaultRank }
 
     // Do the computation
+    val startTime = System.currentTimeMillis
     for (i <- 1 to numIterations) {
       val contribs = links.groupWith(ranks).flatMap {
         case (id, (Seq(links), Seq(rank))) =>
