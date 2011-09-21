@@ -6,6 +6,10 @@ import spark.SparkContext._
 import spark.bagel._
 import spark.bagel.Bagel._
 
+import scala.collection.mutable.ArrayBuffer
+
+import java.io.{InputStream, OutputStream, DataInputStream, DataOutputStream}
+
 object WebPageRankStandalone {
   def main(args: Array[String]) {
     if (args.length < 5) {
@@ -13,7 +17,7 @@ object WebPageRankStandalone {
       System.exit(-1)
     }
 
-    System.setProperty("spark.serializer", "spark.bagel.examples.PRSerializer")
+    System.setProperty("spark.serializer", "spark.bagel.examples.PRSASerializer")
     System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
 
     val inputFile = args(0)
@@ -29,6 +33,7 @@ object WebPageRankStandalone {
     val vertices = sc.objectFile[(Long, PRVertex)](inputFile, numSplits).cache()
 
     val n = vertices.count()
+    val defaultRank = 1.0 / n
     val a = 0.15
     val links = vertices.map { case (id, v) => (id, v.outEdges) }.cache()
     var ranks = vertices.map { case (id, v) => (id, v.value) }
@@ -41,6 +46,9 @@ object WebPageRankStandalone {
       val contribs = links.groupWith(ranks).flatMap {
         case (id, (Seq(links), Seq(rank))) =>
           links.map(dest => (dest, rank / links.size))
+        case (id, (Seq(links), Seq())) =>
+          links.map(dest => (dest, defaultRank / links.size))
+
       }
       val combine = (x: Double, y: Double) => x + y
       ranks = (contribs.combineByKey(x => x, combine, combine, numSplits, partitioner)
@@ -57,9 +65,74 @@ object WebPageRankStandalone {
        .collect.mkString)
     println(top)
 
-    val time = (System.currentTimeMillis - startTime) / 1000
+    val time = (System.currentTimeMillis - startTime) / 1000.0
     println("Completed %d iterations in %f seconds: %f seconds per iteration"
             .format(numIterations, time, time / numIterations))
     System.exit(0)
   }
+}
+
+class PRSASerializer extends spark.Serializer {
+  def newInstance(): SerializerInstance = new PRSASerializerInstance()
+}
+
+class PRSASerializerInstance extends SerializerInstance {
+  def serialize[T](t: T): Array[Byte] = {
+    throw new UnsupportedOperationException()
+  }
+
+  def deserialize[T](bytes: Array[Byte]): T = {
+    throw new UnsupportedOperationException()
+  }
+
+  def outputStream(s: OutputStream): SerializationStream = {
+    new PRSASerializationStream(s)
+  }
+
+  def inputStream(s: InputStream): DeserializationStream = {
+    new PRSADeserializationStream(s)
+  }
+}
+
+class PRSASerializationStream(os: OutputStream) extends SerializationStream {
+  val dos = new DataOutputStream(os)
+
+  def writeObject[T](t: T): Unit = t match {
+    case (id: Long, wrapper: ArrayBuffer[_]) => wrapper(0) match {
+      case links: Array[Long] => {
+        dos.writeBoolean(false) // links
+        dos.writeLong(id)
+        dos.writeInt(links.length)
+        for (link <- links) dos.writeLong(link)
+      }
+      case rank: Double => {
+        dos.writeBoolean(true) // rank
+        dos.writeLong(id)
+        dos.writeDouble(rank)
+      }
+    }
+  }
+
+  def flush() { dos.flush() }
+  def close() { dos.close() }
+}
+
+class PRSADeserializationStream(is: InputStream) extends DeserializationStream {
+  val dis = new DataInputStream(is)
+
+  def readObject[T](): T = {
+    val isLinks = dis.readBoolean()
+    val id = dis.readLong()
+    if (isLinks) {
+      val numLinks = dis.readInt()
+      val links = new Array[Long](numLinks)
+      for (i <- 0 until numLinks) links(i) = dis.readLong()
+      (id, ArrayBuffer(links)).asInstanceOf[T]
+    } else {
+      val rank = dis.readDouble()
+      (id, ArrayBuffer(rank)).asInstanceOf[T]
+    }
+  }
+
+  def close() { dis.close() }
 }
