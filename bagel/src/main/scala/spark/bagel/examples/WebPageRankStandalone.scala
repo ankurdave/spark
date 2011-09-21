@@ -100,16 +100,21 @@ class PRSASerializationStream(os: OutputStream) extends SerializationStream {
   def writeObject[T](t: T): Unit = t match {
     case (id: Long, wrapper: ArrayBuffer[_]) => wrapper(0) match {
       case links: Array[Long] => {
-        dos.writeBoolean(false) // links
+        dos.writeInt(0) // links
         dos.writeLong(id)
         dos.writeInt(links.length)
         for (link <- links) dos.writeLong(link)
       }
       case rank: Double => {
-        dos.writeBoolean(true) // rank
+        dos.writeInt(1) // rank
         dos.writeLong(id)
         dos.writeDouble(rank)
       }
+    }
+    case (id: Long, rank: Double) => {
+      dos.writeInt(2) // rank without wrapper
+      dos.writeLong(id)
+      dos.writeDouble(rank)
     }
   }
 
@@ -121,16 +126,25 @@ class PRSADeserializationStream(is: InputStream) extends DeserializationStream {
   val dis = new DataInputStream(is)
 
   def readObject[T](): T = {
-    val isLinks = dis.readBoolean()
-    val id = dis.readLong()
-    if (isLinks) {
-      val numLinks = dis.readInt()
-      val links = new Array[Long](numLinks)
-      for (i <- 0 until numLinks) links(i) = dis.readLong()
-      (id, ArrayBuffer(links)).asInstanceOf[T]
-    } else {
-      val rank = dis.readDouble()
-      (id, ArrayBuffer(rank)).asInstanceOf[T]
+    val typeId = dis.readInt()
+    typeId match {
+      case 0 => {
+        val id = dis.readLong()
+        val numLinks = dis.readInt()
+        val links = new Array[Long](numLinks)
+        for (i <- 0 until numLinks) links(i) = dis.readLong()
+        (id, ArrayBuffer(links)).asInstanceOf[T]
+      }
+      case 1 => {
+        val id = dis.readLong()
+        val rank = dis.readDouble()
+        (id, ArrayBuffer(rank)).asInstanceOf[T]
+      }
+      case 2 => {
+        val id = dis.readLong()
+        val rank = dis.readDouble()
+        (id, rank).asInstanceOf[T]
+     }
     }
   }
 
