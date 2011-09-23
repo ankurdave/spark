@@ -1,6 +1,6 @@
 package spark.bagel.examples
 
-import spark._
+/*import spark._
 import spark.SparkContext._
 
 import spark.bagel._
@@ -101,3 +101,14 @@ object WebGraphParser {
     i.toLong << 32 | host.hashCode().toLong & 0x00000000FFFFFFFFL
   }
 }
+
+class WGKryoRegistrator extends KryoRegistrator {
+  def registerClasses(k: Kryo) {
+    k.register(classOf[PRVertex])
+    k.register(classOf[WGMessage])
+    k.register(classOf[Tuple2[Long, PRVertex]])
+    k.register(classOf[Array[Tuple2[Long, PRVertex]]])
+    k.register(classOf[scala.collection.mutable.ArraySeq[Int]])
+  }
+}
+*/

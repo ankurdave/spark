@@ -1,4 +1,4 @@
-/*package spark.bagel.examples
+package spark.bagel.examples
 
 import spark._
 import spark.SparkContext._
@@ -8,25 +8,21 @@ import spark.bagel.Bagel._
 
 import scala.xml.{XML,NodeSeq}
 
-import java.io.{Externalizable,ObjectInput,ObjectOutput,DataOutputStream,DataInputStream}
-
-import com.esotericsoftware.kryo._
-
 object WikipediaPageRank {
   def main(args: Array[String]) {
     if (args.length < 4) {
-      System.err.println("Usage: WikipediaPageRank <inputFile> <threshold> <numSplits> <host> [<noCombiner>]")
+      System.err.println("Usage: WikipediaPageRank <inputFile> <threshold> <numSplits> <host> <useCombiner>")
       System.exit(-1)
     }
 
     System.setProperty("spark.serializer", "spark.KryoSerializer")
-    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator[String]].getName)
+    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator].getName)
 
     val inputFile = args(0)
     val threshold = args(1).toDouble
     val numSplits = args(2).toInt
     val host = args(3)
-    val noCombiner = args.length > 4 && args(4).nonEmpty
+    val useCombiner = args(4).toBoolean
     val sc = new SparkContext(host, "WikipediaPageRank")
 
     // Parse the Wikipedia page data into a graph
@@ -59,18 +55,18 @@ object WikipediaPageRank {
 
     // Do the computation
     val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(Array[(String, PRMessage[String])]())
-    val utils = new PageRankUtils[String]
+    val messages = sc.parallelize(Array[(String, PRMessage)]())
+    val utils = new PageRankUtils
     val result =
-      if (noCombiner) {
+      if (useCombiner) {
+        Bagel.run(
+          sc, vertices, messages, combiner = new PRCombiner(),
+          numSplits = numSplits)(
+          utils.computeWithCombiner(numVertices, epsilon))
+      } else {
         Bagel.run(
           sc, vertices, messages, numSplits = numSplits)(
           utils.computeNoCombiner(numVertices, epsilon))
-      } else {
-        Bagel.run(
-          sc, vertices, messages, combiner = new PRCombiner[String](),
-          numSplits = numSplits)(
-          utils.computeWithCombiner(numVertices, epsilon))
       }
 
     // Print the result
@@ -83,4 +79,3 @@ object WikipediaPageRank {
     println(top)
   }
 }
-*/

@@ -1,6 +1,6 @@
 package spark.bagel.examples
 
-import spark._
+/*import spark._
 import spark.SparkContext._
 
 import spark.bagel._
@@ -18,7 +18,6 @@ object WebPageRankStandalone {
     }
 
     System.setProperty("spark.serializer", "spark.bagel.examples.PRSASerializer")
-    System.setProperty("spark.kryo.registrator", classOf[WGKryoRegistrator].getName)
 
     val inputFile = args(0)
     val threshold = args(1).toDouble
@@ -149,3 +148,4 @@ class PRSADeserializationStream(is: InputStream) extends DeserializationStream {
 
   def close() { dis.close() }
 }
+*/

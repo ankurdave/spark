@@ -6,18 +6,18 @@ import spark.SparkContext._
 import scala.collection.mutable.ArrayBuffer
 
 object Bagel extends Logging {
-  def run[V <: Vertex : Manifest, M <: Message : Manifest,
+  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
           C : Manifest, A : Manifest](
     sc: SparkContext,
-    vertices: RDD[(Long, V)],
-    messages: RDD[(Long, M)],
+    vertices: RDD[(K, V)],
+    messages: RDD[(K, M)],
     combiner: Combiner[M, C],
     aggregator: Option[Aggregator[V, A]],
     partitioner: Partitioner,
     numSplits: Int
   )(
     compute: (V, Option[C], Option[A], Int) => (V, Array[M])
-  ): RDD[(Long, V)] = {
+  ): RDD[(K, V)] = {
     val splits = if (numSplits != 0) numSplits else sc.defaultParallelism
 
     var superstep = 0
@@ -34,7 +34,7 @@ object Bagel extends Logging {
         splits, partitioner)
       val grouped = combinedMsgs.groupWith(verts)
       val (processed, numMsgs, numActiveVerts) =
-        comp[Long, V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
+        comp[K, V, M, C](sc, grouped, compute(_, _, aggregated, superstep))
 
       val timeTaken = System.currentTimeMillis - startTime
       logInfo("Superstep %d took %d s".format(superstep, timeTaken / 1000))
@@ -51,58 +51,58 @@ object Bagel extends Logging {
     verts
   }
 
-  def run[I : Manifest, V <: Vertex : Manifest, M <: Message : Manifest,
+  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
           C : Manifest](
     sc: SparkContext,
-    vertices: RDD[(Long, V)],
-    messages: RDD[(Long, M)],
+    vertices: RDD[(K, V)],
+    messages: RDD[(K, M)],
     combiner: Combiner[M, C],
     partitioner: Partitioner,
     numSplits: Int
   )(
     compute: (V, Option[C], Int) => (V, Array[M])
-  ): RDD[(Long, V)] = {
-    run[V, M, C, Nothing](
+  ): RDD[(K, V)] = {
+    run[K, V, M, C, Nothing](
       sc, vertices, messages, combiner, None, partitioner, numSplits)(
-      addAggregatorArg[Long, V, M, C](compute))
+      addAggregatorArg[K, V, M, C](compute))
   }
 
-  def run[V <: Vertex : Manifest, M <: Message : Manifest,
+  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
           C : Manifest](
     sc: SparkContext,
-    vertices: RDD[(Long, V)],
-    messages: RDD[(Long, M)],
+    vertices: RDD[(K, V)],
+    messages: RDD[(K, M)],
     combiner: Combiner[M, C],
     numSplits: Int
   )(
     compute: (V, Option[C], Int) => (V, Array[M])
-  ): RDD[(Long, V)] = {
+  ): RDD[(K, V)] = {
     val part = new HashPartitioner(numSplits)
-    run[V, M, C, Nothing](
+    run[K, V, M, C, Nothing](
       sc, vertices, messages, combiner, None, part, numSplits)(
-      addAggregatorArg[Long, V, M, C](compute))
+      addAggregatorArg[K, V, M, C](compute))
   }
 
-  def run[V <: Vertex : Manifest, M <: Message : Manifest](
+  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest](
     sc: SparkContext,
-    vertices: RDD[(Long, V)],
-    messages: RDD[(Long, M)],
+    vertices: RDD[(K, V)],
+    messages: RDD[(K, M)],
     numSplits: Int
   )(
     compute: (V, Option[Array[M]], Int) => (V, Array[M])
-  ): RDD[(Long, V)] = {
+  ): RDD[(K, V)] = {
     val part = new HashPartitioner(numSplits)
-    run[V, M, Array[M], Nothing](
+    run[K, V, M, Array[M], Nothing](
       sc, vertices, messages, new DefaultCombiner(), None, part, numSplits)(
-      addAggregatorArg[Long, V, M, Array[M]](compute))
+      addAggregatorArg[K, V, M, Array[M]](compute))
   }
 
   /**
    * Aggregates the given vertices using the given aggregator, if it
    * is specified.
    */
-  private def agg[I, V <: Vertex, A : Manifest](
-    verts: RDD[(I, V)],
+  private def agg[K, V <: Vertex, A : Manifest](
+    verts: RDD[(K, V)],
     aggregator: Option[Aggregator[V, A]]
   ): Option[A] = aggregator match {
     case Some(a) =>
@@ -117,11 +117,11 @@ object Bagel extends Logging {
    * function. Returns the processed RDD, the number of messages
    * created, and the number of active vertices.
    */
-  private def comp[I : Manifest, V <: Vertex, M <: Message, C](
+  private def comp[K : Manifest, V <: Vertex, M <: Message[K], C](
     sc: SparkContext,
-    grouped: RDD[(I, (Seq[C], Seq[V]))],
+    grouped: RDD[(K, (Seq[C], Seq[V]))],
     compute: (V, Option[C]) => (V, Array[M])
-  ): (RDD[(I, (V, Array[M]))], Int, Int) = {
+  ): (RDD[(K, (V, Array[M]))], Int, Int) = {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
     val processed = grouped.flatMapValues {
@@ -159,7 +159,7 @@ object Bagel extends Logging {
    * one that does, so it can be passed to Bagel.run.
    */
   private def addAggregatorArg[
-    I, V <: Vertex : Manifest, M <: Message : Manifest, C
+    K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest, C
   ](
     compute: (V, Option[C], Int) => (V, Array[M])
   ): (V, Option[C], Option[Nothing], Int) => (V, Array[M]) = {
@@ -204,6 +204,6 @@ trait Vertex {
  * Subclasses may contain a payload to deliver to the target vertex
  * and must inherit from java.io.Serializable or scala.Serializable.
  */
-trait Message {
-  def targetId: Long
+trait Message[K] {
+  def targetId: K
 }
