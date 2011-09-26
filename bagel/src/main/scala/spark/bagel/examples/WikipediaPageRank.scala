@@ -8,34 +8,33 @@ import spark.bagel.Bagel._
 
 import scala.xml.{XML,NodeSeq}
 
+import scala.collection.mutable.ArrayBuffer
+
+import java.io.{InputStream, OutputStream, DataInputStream, DataOutputStream}
+
 object WikipediaPageRank {
   def main(args: Array[String]) {
     if (args.length < 4) {
-      System.err.println("Usage: WikipediaPageRank <inputFile> <threshold> <numSplits> <host> <useCombiner>")
+      System.err.println("Usage: WikipediaPageRank <inputFile> <threshold> <numIterations <host> <useCombiner> <usePartitioner>")
       System.exit(-1)
     }
 
-    System.setProperty("spark.serializer", "spark.KryoSerializer")
-    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator].getName)
+    System.setProperty("spark.serializer", "spark.bagel.examples.WPRSerializer")
 
     val inputFile = args(0)
     val threshold = args(1).toDouble
-    val numSplits = args(2).toInt
+    val numIterations = args(2).toInt
     val host = args(3)
     val useCombiner = args(4).toBoolean
+    val usePartitioner = args(5).toBoolean
     val sc = new SparkContext(host, "WikipediaPageRank")
 
-    // Parse the Wikipedia page data into a graph
     val input = sc.textFile(inputFile)
-
-    println("Counting vertices...")
-    val numVertices = input.count()
-    println("Done counting vertices.")
-
-    println("Parsing input file...")
-    val vertices = input.map(line => {
+    val partitioner = new HashPartitioner(sc.defaultParallelism)
+    val links = input.map(line => {
       val fields = line.split("\t")
       val (title, body) = (fields(1), fields(3).replace("\\n", "\n"))
+      val id = new String(title)
       val links =
         if (body == "\\N")
           NodeSeq.Empty
@@ -48,34 +47,140 @@ object WikipediaPageRank {
             NodeSeq.Empty
           }
       val outEdges = links.map(link => new String(link.text)).toArray
-      val id = new String(title)
-      (id, new PRVertex(1.0 / numVertices, outEdges))
-    }).cache
-    println("Done parsing input file.")
+      (id, outEdges)
+    }).partitionBy(partitioner).cache
+    val n = links.count
+    val defaultRank = 1.0 / n
+    var ranks = links.mapValues { edges => defaultRank }
+    val a = 0.15
 
     // Do the computation
-    val epsilon = 0.01 / numVertices
-    val messages = sc.parallelize(Array[(String, PRMessage)]())
-    val utils = new PageRankUtils
-    val result =
-      if (useCombiner) {
-        Bagel.run(
-          sc, vertices, messages, combiner = new PRCombiner(),
-          numSplits = numSplits)(
-          utils.computeWithCombiner(numVertices, epsilon))
-      } else {
-        Bagel.run(
-          sc, vertices, messages, numSplits = numSplits)(
-          utils.computeNoCombiner(numVertices, epsilon))
+    println("Starting computation")
+    val startTime = System.currentTimeMillis
+    for (i <- 1 to numIterations) {
+      val contribs = links.groupWith(ranks).flatMap {
+        case (id, (Seq(links), Seq(rank))) =>
+          links.map(dest => (dest, rank / links.size))
+        case (id, (Seq(links), Seq())) =>
+          links.map(dest => (dest, defaultRank / links.size))
       }
+      val combine = (x: Double, y: Double) => x + y
+      ranks = (contribs.combineByKey(x => x, combine, combine, sc.defaultParallelism, partitioner)
+               .mapValues(sum => a/n + (1-a)*sum))
+
+      ranks.foreach(x => {})
+      println("Finished iteration %d".format(i))
+    }
 
     // Print the result
     System.err.println("Articles with PageRank >= "+threshold+":")
     val top =
-      (result
-       .filter { case (id, vertex) => vertex.value >= threshold }
-       .map { case (id, vertex) => "%s\t%s\n".format(id, vertex.value) }
+      (ranks
+       .filter { case (id, rank) => rank >= threshold }
+       .map { case (id, rank) => "%s\t%s\n".format(id, rank) }
        .collect.mkString)
     println(top)
+
+    val time = (System.currentTimeMillis - startTime) / 1000.0
+    println("Completed %d iterations in %f seconds: %f seconds per iteration"
+            .format(numIterations, time, time / numIterations))
+    System.exit(0)
   }
+}
+
+class WPRSerializer extends spark.Serializer {
+  def newInstance(): SerializerInstance = new WPRSerializerInstance()
+}
+
+class WPRSerializerInstance extends SerializerInstance {
+  def serialize[T](t: T): Array[Byte] = {
+    throw new UnsupportedOperationException()
+  }
+
+  def deserialize[T](bytes: Array[Byte]): T = {
+    throw new UnsupportedOperationException()
+  }
+
+  def outputStream(s: OutputStream): SerializationStream = {
+    new WPRSerializationStream(s)
+  }
+
+  def inputStream(s: InputStream): DeserializationStream = {
+    new WPRDeserializationStream(s)
+  }
+}
+
+class WPRSerializationStream(os: OutputStream) extends SerializationStream {
+  val dos = new DataOutputStream(os)
+
+  def writeObject[T](t: T): Unit = t match {
+    case (id: String, wrapper: ArrayBuffer[_]) => wrapper(0) match {
+      case links: Array[String] => {
+        dos.writeInt(0) // links
+        dos.writeInt(id.length())
+        dos.writeChars(id)
+        dos.writeInt(links.length)
+        for (link <- links) {
+          dos.writeInt(link.length())
+          dos.writeChars(link)
+        }
+      }
+      case rank: Double => {
+        dos.writeInt(1) // rank
+        dos.writeInt(id.length())
+        dos.writeChars(id)
+        dos.writeDouble(rank)
+      }
+    }
+    case (id: String, rank: Double) => {
+      dos.writeInt(2) // rank without wrapper
+      dos.writeInt(id.length())
+      dos.writeChars(id)
+      dos.writeDouble(rank)
+    }
+  }
+
+  def flush() { dos.flush() }
+  def close() { dos.close() }
+}
+
+class WPRDeserializationStream(is: InputStream) extends DeserializationStream {
+  val dis = new DataInputStream(is)
+  val buf = new Array[Byte](1024)
+
+  def readObject[T](): T = {
+    val typeId = dis.readInt()
+    typeId match {
+      case 0 => {
+        val idLength = dis.readInt()
+        dis.read(buf, 0, idLength)
+        val id = new String(buf, 0, idLength)
+        val numLinks = dis.readInt()
+        val links = new Array[String](numLinks)
+        for (i <- 0 until numLinks) {
+          val linkLength = dis.readInt()
+          dis.read(buf, 0, linkLength)
+          val link = new String(buf, 0, linkLength)
+          links(i) = link
+        }
+        (id, ArrayBuffer(links)).asInstanceOf[T]
+      }
+      case 1 => {
+        val idLength = dis.readInt()
+        dis.read(buf, 0, idLength)
+        val id = new String(buf, 0, idLength)
+        val rank = dis.readDouble()
+        (id, ArrayBuffer(rank)).asInstanceOf[T]
+      }
+      case 2 => {
+        val idLength = dis.readInt()
+        dis.read(buf, 0, idLength)
+        val id = new String(buf, 0, idLength)
+        val rank = dis.readDouble()
+        (id, rank).asInstanceOf[T]
+     }
+    }
+  }
+
+  def close() { dis.close() }
 }
