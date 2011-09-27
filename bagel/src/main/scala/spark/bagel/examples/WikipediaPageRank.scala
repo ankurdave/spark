@@ -20,6 +20,7 @@ object WikipediaPageRank {
     }
 
     System.setProperty("spark.serializer", "spark.bagel.examples.WPRSerializer")
+    System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator].getName)
 
     val inputFile = args(0)
     val threshold = args(1).toDouble
@@ -63,6 +64,8 @@ object WikipediaPageRank {
           links.map(dest => (dest, rank / links.size))
         case (id, (Seq(links), Seq())) =>
           links.map(dest => (dest, defaultRank / links.size))
+        case (id, (Seq(), Seq(rank))) =>
+          Array[(String, Double)]()
       }
       val combine = (x: Double, y: Double) => x + y
       ranks = (contribs.combineByKey(x => x, combine, combine, sc.defaultParallelism, partitioner)
@@ -117,25 +120,21 @@ class WPRSerializationStream(os: OutputStream) extends SerializationStream {
     case (id: String, wrapper: ArrayBuffer[_]) => wrapper(0) match {
       case links: Array[String] => {
         dos.writeInt(0) // links
-        dos.writeInt(id.length())
-        dos.writeChars(id)
+        dos.writeUTF(id)
         dos.writeInt(links.length)
         for (link <- links) {
-          dos.writeInt(link.length())
-          dos.writeChars(link)
+          dos.writeUTF(link)
         }
       }
       case rank: Double => {
         dos.writeInt(1) // rank
-        dos.writeInt(id.length())
-        dos.writeChars(id)
+        dos.writeUTF(id)
         dos.writeDouble(rank)
       }
     }
     case (id: String, rank: Double) => {
       dos.writeInt(2) // rank without wrapper
-      dos.writeInt(id.length())
-      dos.writeChars(id)
+      dos.writeUTF(id)
       dos.writeDouble(rank)
     }
   }
@@ -146,36 +145,27 @@ class WPRSerializationStream(os: OutputStream) extends SerializationStream {
 
 class WPRDeserializationStream(is: InputStream) extends DeserializationStream {
   val dis = new DataInputStream(is)
-  val buf = new Array[Byte](1024)
 
   def readObject[T](): T = {
     val typeId = dis.readInt()
     typeId match {
       case 0 => {
-        val idLength = dis.readInt()
-        dis.read(buf, 0, idLength)
-        val id = new String(buf, 0, idLength)
+        val id = dis.readUTF()
         val numLinks = dis.readInt()
         val links = new Array[String](numLinks)
         for (i <- 0 until numLinks) {
-          val linkLength = dis.readInt()
-          dis.read(buf, 0, linkLength)
-          val link = new String(buf, 0, linkLength)
+          val link = dis.readUTF()
           links(i) = link
         }
         (id, ArrayBuffer(links)).asInstanceOf[T]
       }
       case 1 => {
-        val idLength = dis.readInt()
-        dis.read(buf, 0, idLength)
-        val id = new String(buf, 0, idLength)
+        val id = dis.readUTF()
         val rank = dis.readDouble()
         (id, ArrayBuffer(rank)).asInstanceOf[T]
       }
       case 2 => {
-        val idLength = dis.readInt()
-        dis.read(buf, 0, idLength)
-        val id = new String(buf, 0, idLength)
+        val id = dis.readUTF()
         val rank = dis.readDouble()
         (id, rank).asInstanceOf[T]
      }
