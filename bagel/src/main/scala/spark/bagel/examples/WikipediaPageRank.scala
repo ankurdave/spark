@@ -39,11 +39,11 @@ object WikipediaPageRank {
 
     // Do the computation
     val startTime = System.currentTimeMillis
-    ranks =
+    val ranks =
       if (useCombiner)
-        pageRank(links, numIterations, defaultRank, a, partitioner, sc.defaultParallelism)
+        pageRank(links, numIterations, defaultRank, a, n, partitioner, sc.defaultParallelism)
       else
-        pageRankNoCombiner(links, numIterations, defaultRank, a, partitioner, sc.defaultParallelism)
+        pageRankNoCombiner(links, numIterations, defaultRank, a, n, partitioner, sc.defaultParallelism)
 
     // Print the result
     System.err.println("Articles with PageRank >= "+threshold+":")
@@ -60,7 +60,7 @@ object WikipediaPageRank {
     System.exit(0)
   }
 
-  def parseArticle(line: String) = (String, Array[String]) = {
+  def parseArticle(line: String): (String, Array[String]) = {
     val fields = line.split("\t")
     val (title, body) = (fields(1), fields(3).replace("\\n", "\n"))
     val id = new String(title)
@@ -84,6 +84,7 @@ object WikipediaPageRank {
     numIterations: Int,
     defaultRank: Double,
     a: Double,
+    n: Long,
     partitioner: Partitioner,
     numSplits: Int
   ): RDD[(String, Double)] = {
@@ -97,7 +98,11 @@ object WikipediaPageRank {
         case (id, (Seq(), Seq(rank))) =>
           Array[(String, Double)]()
       }
-      ranks = (contribs.combineByKey(x => x, _ + _, _ + _, numSplits, partitioner)
+      ranks = (contribs.combineByKey((x: Double) => x,
+                                     (x: Double, y: Double) => x + y,
+                                     (x: Double, y: Double) => x + y,
+                                     numSplits,
+                                     partitioner)
                .mapValues(sum => a/n + (1-a)*sum))
 
       // ranks.foreach(x => {})
@@ -111,29 +116,33 @@ object WikipediaPageRank {
     numIterations: Int,
     defaultRank: Double,
     a: Double,
+    n: Long,
     partitioner: Partitioner,
     numSplits: Int
   ): RDD[(String, Double)] = {
-    var inContribs = links.mapValues { edges => new ArrayBuffer[Double]() }
+    var ranks = links.mapValues { edges => new ArrayBuffer[Double]() }
     for (i <- 1 to numIterations) {
-      val contribs = links.groupWith(inContribs).flatMap {
+      val contribs = links.groupWith(ranks).flatMap {
         case (id, (Seq(links), Seq(inContribs))) if inContribs.length > 0 =>
           links.map(dest => (dest, (a/n + (1-a)*inContribs.sum) / links.size))
-        case (id, (Seq(links), Seq())) | (id, (Seq(links), Seq(inContribs))) if inContribs.length == 0 =>
+        case (id, (Seq(links), Seq())) =>
+          links.map(dest => (dest, defaultRank / links.size))
+        case (id, (Seq(links), Seq(inContribs))) if inContribs.length == 0 =>
           links.map(dest => (dest, defaultRank / links.size))
         case (id, (Seq(), Seq(inContribs))) =>
           Array[(String, Double)]()
       }
-      ranks = contribs.combineByKey(x => ArrayBuffer(x),
-                                    (xs, x) => xs += x,
-                                    (xs, ys) => xs ++= ys,
-                                    numSplits,
-                                    partitioner)
+      ranks = contribs.combineByKey(
+        (x: Double) => ArrayBuffer(x),
+        (xs: ArrayBuffer[Double], x: Double) => xs += x,
+        (xs: ArrayBuffer[Double], ys: ArrayBuffer[Double]) => xs ++= ys,
+        numSplits,
+        partitioner)
 
       // ranks.foreach(x => {})
       // println("Finished iteration %d".format(i))
     }
-    ranks
+    ranks.mapValues(inContribs => (a/n + (1-a)*inContribs.sum))
   }
 }
 
