@@ -32,48 +32,18 @@ object WikipediaPageRank {
 
     val input = sc.textFile(inputFile)
     val partitioner = new HashPartitioner(sc.defaultParallelism)
-    val links = input.map(line => {
-      val fields = line.split("\t")
-      val (title, body) = (fields(1), fields(3).replace("\\n", "\n"))
-      val id = new String(title)
-      val links =
-        if (body == "\\N")
-          NodeSeq.Empty
-        else
-          try {
-            XML.loadString(body) \\ "link" \ "target"
-          } catch {
-            case e: org.xml.sax.SAXParseException =>
-              System.err.println("Article \""+title+"\" has malformed XML in body:\n"+body)
-            NodeSeq.Empty
-          }
-      val outEdges = links.map(link => new String(link.text)).toArray
-      (id, outEdges)
-    }).partitionBy(partitioner).cache
+    val links = input.map(parseArticle _).partitionBy(partitioner).cache
     val n = links.count
     val defaultRank = 1.0 / n
-    var ranks = links.mapValues { edges => defaultRank }
     val a = 0.15
 
     // Do the computation
-    println("Starting computation")
     val startTime = System.currentTimeMillis
-    for (i <- 1 to numIterations) {
-      val contribs = links.groupWith(ranks).flatMap {
-        case (id, (Seq(links), Seq(rank))) =>
-          links.map(dest => (dest, rank / links.size))
-        case (id, (Seq(links), Seq())) =>
-          links.map(dest => (dest, defaultRank / links.size))
-        case (id, (Seq(), Seq(rank))) =>
-          Array[(String, Double)]()
-      }
-      val combine = (x: Double, y: Double) => x + y
-      ranks = (contribs.combineByKey(x => x, combine, combine, sc.defaultParallelism, partitioner)
-               .mapValues(sum => a/n + (1-a)*sum))
-
-      ranks.foreach(x => {})
-      println("Finished iteration %d".format(i))
-    }
+    ranks =
+      if (useCombiner)
+        pageRank(links, numIterations, defaultRank, a, partitioner, sc.defaultParallelism)
+      else
+        pageRankNoCombiner(links, numIterations, defaultRank, a, partitioner, sc.defaultParallelism)
 
     // Print the result
     System.err.println("Articles with PageRank >= "+threshold+":")
@@ -88,6 +58,82 @@ object WikipediaPageRank {
     println("Completed %d iterations in %f seconds: %f seconds per iteration"
             .format(numIterations, time, time / numIterations))
     System.exit(0)
+  }
+
+  def parseArticle(line: String) = (String, Array[String]) = {
+    val fields = line.split("\t")
+    val (title, body) = (fields(1), fields(3).replace("\\n", "\n"))
+    val id = new String(title)
+    val links =
+      if (body == "\\N")
+        NodeSeq.Empty
+      else
+        try {
+          XML.loadString(body) \\ "link" \ "target"
+        } catch {
+          case e: org.xml.sax.SAXParseException =>
+            System.err.println("Article \""+title+"\" has malformed XML in body:\n"+body)
+          NodeSeq.Empty
+        }
+    val outEdges = links.map(link => new String(link.text)).toArray
+    (id, outEdges)
+  }
+
+  def pageRank(
+    links: RDD[(String, Array[String])],
+    numIterations: Int,
+    defaultRank: Double,
+    a: Double,
+    partitioner: Partitioner,
+    numSplits: Int
+  ): RDD[(String, Double)] = {
+    var ranks = links.mapValues { edges => defaultRank }
+    for (i <- 1 to numIterations) {
+      val contribs = links.groupWith(ranks).flatMap {
+        case (id, (Seq(links), Seq(rank))) =>
+          links.map(dest => (dest, rank / links.size))
+        case (id, (Seq(links), Seq())) =>
+          links.map(dest => (dest, defaultRank / links.size))
+        case (id, (Seq(), Seq(rank))) =>
+          Array[(String, Double)]()
+      }
+      ranks = (contribs.combineByKey(x => x, _ + _, _ + _, numSplits, partitioner)
+               .mapValues(sum => a/n + (1-a)*sum))
+
+      // ranks.foreach(x => {})
+      // println("Finished iteration %d".format(i))
+    }
+    ranks
+  }
+
+  def pageRankNoCombiner(
+    links: RDD[(String, Array[String])],
+    numIterations: Int,
+    defaultRank: Double,
+    a: Double,
+    partitioner: Partitioner,
+    numSplits: Int
+  ): RDD[(String, Double)] = {
+    var inContribs = links.mapValues { edges => new ArrayBuffer[Double]() }
+    for (i <- 1 to numIterations) {
+      val contribs = links.groupWith(inContribs).flatMap {
+        case (id, (Seq(links), Seq(inContribs))) if inContribs.length > 0 =>
+          links.map(dest => (dest, (a/n + (1-a)*inContribs.sum) / links.size))
+        case (id, (Seq(links), Seq())) | (id, (Seq(links), Seq(inContribs))) if inContribs.length == 0 =>
+          links.map(dest => (dest, defaultRank / links.size))
+        case (id, (Seq(), Seq(inContribs))) =>
+          Array[(String, Double)]()
+      }
+      ranks = contribs.combineByKey(x => ArrayBuffer(x),
+                                    (xs, x) => xs += x,
+                                    (xs, ys) => xs ++= ys,
+                                    numSplits,
+                                    partitioner)
+
+      // ranks.foreach(x => {})
+      // println("Finished iteration %d".format(i))
+    }
+    ranks
   }
 }
 
