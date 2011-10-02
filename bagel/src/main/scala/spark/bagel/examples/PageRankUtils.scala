@@ -41,13 +41,10 @@ class PageRankUtils extends Serializable {
     }, superstep)
 }
 
-class PRCombiner extends Combiner[PRMessage, Double] with Serializable {
-  def createCombiner(msg: PRMessage): Double =
-    msg.value
-  def mergeMsg(combiner: Double, msg: PRMessage): Double =
-    combiner + msg.value
-  def mergeCombiners(a: Double, b: Double): Double =
-    a + b
+class PRCombiner extends Combiner[Double, Double] with Serializable {
+  def createCombiner(msg: Double): Double = msg
+  def mergeMsg(combiner: Double, msg: Double): Double = combiner + msg
+  def mergeCombiners(a: Double, b: Double): Double = a + b
 }
 
 class PRVertex() extends Vertex with Serializable {

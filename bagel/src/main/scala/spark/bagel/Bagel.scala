@@ -6,7 +6,7 @@ import spark.SparkContext._
 import scala.collection.mutable.ArrayBuffer
 
 object Bagel extends Logging {
-  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
+  def run[K : Manifest, V <: Vertex : Manifest, M : Manifest,
           C : Manifest, A : Manifest](
     sc: SparkContext,
     vertices: RDD[(K, V)],
@@ -16,7 +16,7 @@ object Bagel extends Logging {
     partitioner: Partitioner,
     numSplits: Int
   )(
-    compute: (V, Option[C], Option[A], Int) => (V, Array[M])
+    compute: (V, Option[C], Option[A], Int) => (V, Array[(K, M)])
   ): RDD[(K, V)] = {
     val splits = if (numSplits != 0) numSplits else sc.defaultParallelism
 
@@ -40,9 +40,7 @@ object Bagel extends Logging {
       logInfo("Superstep %d took %d s".format(superstep, timeTaken / 1000))
 
       verts = processed.mapValues { case (vert, msgs) => vert }
-      msgs = processed.flatMap {
-        case (id, (vert, msgs)) => msgs.map(m => (m.targetId, m))
-      }
+      msgs = processed.flatMap { case (id, (vert, msgs)) => msgs }
       superstep += 1
 
       noActivity = numMsgs == 0 && numActiveVerts == 0
@@ -51,7 +49,7 @@ object Bagel extends Logging {
     verts
   }
 
-  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
+  def run[K : Manifest, V <: Vertex : Manifest, M : Manifest,
           C : Manifest](
     sc: SparkContext,
     vertices: RDD[(K, V)],
@@ -60,14 +58,14 @@ object Bagel extends Logging {
     partitioner: Partitioner,
     numSplits: Int
   )(
-    compute: (V, Option[C], Int) => (V, Array[M])
+    compute: (V, Option[C], Int) => (V, Array[(K, M)])
   ): RDD[(K, V)] = {
     run[K, V, M, C, Nothing](
       sc, vertices, messages, combiner, None, partitioner, numSplits)(
       addAggregatorArg[K, V, M, C](compute))
   }
 
-  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
+  def run[K : Manifest, V <: Vertex : Manifest, M : Manifest,
           C : Manifest](
     sc: SparkContext,
     vertices: RDD[(K, V)],
@@ -75,7 +73,7 @@ object Bagel extends Logging {
     combiner: Combiner[M, C],
     numSplits: Int
   )(
-    compute: (V, Option[C], Int) => (V, Array[M])
+    compute: (V, Option[C], Int) => (V, Array[(K, M)])
   ): RDD[(K, V)] = {
     val part = new HashPartitioner(numSplits)
     run[K, V, M, C, Nothing](
@@ -83,13 +81,13 @@ object Bagel extends Logging {
       addAggregatorArg[K, V, M, C](compute))
   }
 
-  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest](
+  def run[K : Manifest, V <: Vertex : Manifest, M : Manifest](
     sc: SparkContext,
     vertices: RDD[(K, V)],
     messages: RDD[(K, M)],
     numSplits: Int
   )(
-    compute: (V, Option[Array[M]], Int) => (V, Array[M])
+    compute: (V, Option[Array[M]], Int) => (V, Array[(K, M)])
   ): RDD[(K, V)] = {
     val part = new HashPartitioner(numSplits)
     run[K, V, M, Array[M], Nothing](
@@ -117,11 +115,11 @@ object Bagel extends Logging {
    * function. Returns the processed RDD, the number of messages
    * created, and the number of active vertices.
    */
-  private def comp[K : Manifest, V <: Vertex, M <: Message[K], C](
+  private def comp[K : Manifest, V <: Vertex, M, C](
     sc: SparkContext,
     grouped: RDD[(K, (Seq[C], Seq[V]))],
-    compute: (V, Option[C]) => (V, Array[M])
-  ): (RDD[(K, (V, Array[M]))], Int, Int) = {
+    compute: (V, Option[C]) => (V, Array[(K, M)])
+  ): (RDD[(K, (V, Array[(K, M)]))], Int, Int) = {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
     val processed = grouped.flatMapValues {
@@ -159,10 +157,10 @@ object Bagel extends Logging {
    * one that does, so it can be passed to Bagel.run.
    */
   private def addAggregatorArg[
-    K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest, C
+    K : Manifest, V <: Vertex : Manifest, M : Manifest, C
   ](
-    compute: (V, Option[C], Int) => (V, Array[M])
-  ): (V, Option[C], Option[Nothing], Int) => (V, Array[M]) = {
+    compute: (V, Option[C], Int) => (V, Array[(K, M)])
+  ): (V, Option[C], Option[Nothing], Int) => (V, Array[(K, M)]) = {
     (vert: V, msgs: Option[C], aggregated: Option[Nothing], superstep: Int) =>
       compute(vert, msgs, superstep)
   }
