@@ -123,10 +123,10 @@ object Bagel extends Logging {
     var numMsgs = sc.accumulator(0)
     var numActiveVerts = sc.accumulator(0)
     val processed = grouped.flatMapValues {
-      case (_, Seq()) => None
-      case (c, Seq(v)) =>
+      case (_, vs) if vs.size == 0 => None
+      case (c, vs) =>
         val (newVert, newMsgs) =
-          compute(v, c match {
+          compute(vs(0), c match {
             case Seq(comb) => Some(comb)
             case Seq() => None
           })
@@ -136,14 +136,6 @@ object Bagel extends Logging {
           numActiveVerts += 1
 
         Some((newVert, newMsgs))
-
-      case (c, v) =>
-        logError("Multiple vertices had the same ID")
-        for (vert <- v) {
-          logInfo(vert.toString)
-        }
-        throw new Exception()
-
     }.cache
 
     // Force evaluation of processed RDD for accurate performance measurements
