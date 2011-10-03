@@ -25,10 +25,12 @@ object WikipediaPageRank {
     val host = args(3)
     val usePartitioner = args(4).toBoolean
     val useBagel = args(5).toBoolean
-    if (useBagel)
-      System.setProperty("spark.serializer", "spark.bagel.examples.WPRBSerializer")
-    else
+    if (useBagel) {
+      System.setProperty("spark.serializer", "spark.KryoSerializer")
+      System.setProperty("spark.kryo.registrator", classOf[PRKryoRegistrator].getName)
+    } else {
       System.setProperty("spark.serializer", "spark.bagel.examples.WPRSerializer")
+    }
 
     val sc = new SparkContext(host, "WikipediaPageRank")
 
