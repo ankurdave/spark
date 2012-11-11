@@ -12,7 +12,7 @@ object Bagel extends Logging {
     vertices: RDD[(K, V)],
     messages: RDD[(K, M)],
     combiner: Combiner[M, C],
-    aggregator: Option[Aggregator[V, A]],
+    aggregator: Int => Option[Aggregator[V, A]],
     partitioner: Partitioner,
     numSplits: Int
   )(
@@ -28,7 +28,7 @@ object Bagel extends Logging {
       logInfo("Starting superstep "+superstep+".")
       val startTime = System.currentTimeMillis
 
-      val aggregated = agg(verts, aggregator)
+      val aggregated = agg(verts, aggregator(superstep))
       val combinedMsgs = msgs.combineByKey(
         combiner.createCombiner _, combiner.mergeMsg _, combiner.mergeCombiners _, partitioner)
       val grouped = combinedMsgs.groupWith(verts)
@@ -48,6 +48,23 @@ object Bagel extends Logging {
     } while (!noActivity)
 
     verts
+  }
+
+  def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
+          C : Manifest, A : Manifest](
+    sc: SparkContext,
+    vertices: RDD[(K, V)],
+    messages: RDD[(K, M)],
+    combiner: Combiner[M, C],
+    aggregator: Option[Aggregator[V, A]],
+    partitioner: Partitioner,
+    numSplits: Int
+  )(
+    compute: (V, Option[C], Option[A], Int) => (V, Array[M])
+  ): RDD[(K, V)] = {
+    run[K, V, M, C, A](
+      sc, vertices, messages, combiner, (superstep: Int) => aggregator,
+      partitioner, numSplits)(compute)
   }
 
   def run[K : Manifest, V <: Vertex : Manifest, M <: Message[K] : Manifest,
@@ -92,7 +109,7 @@ object Bagel extends Logging {
   ): RDD[(K, V)] = {
     val part = new HashPartitioner(numSplits)
     run[K, V, M, Array[M], Nothing](
-      sc, vertices, messages, new DefaultCombiner(), None, part, numSplits)(
+      sc, vertices, messages, new DefaultCombiner[M](), None, part, numSplits)(
       addAggregatorArg[K, V, M, Array[M]](compute))
   }
 
