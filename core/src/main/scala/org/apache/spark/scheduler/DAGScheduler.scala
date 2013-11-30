@@ -258,6 +258,7 @@ class DAGScheduler(
               visit(dep.rdd)
           }
         }
+        r.dependencies_ = null
       }
     }
     visit(rdd)
@@ -282,6 +283,7 @@ class DAGScheduler(
                 visit(narrowDep.rdd)
             }
           }
+          rdd.dependencies_ = null
         }
       }
     }
@@ -842,6 +844,7 @@ class DAGScheduler(
               visit(narrowDep.rdd)
           }
         }
+        rdd.dependencies_ = null
       }
     }
     visit(stage.rdd)
@@ -878,6 +881,7 @@ class DAGScheduler(
         }
       case _ =>
     }
+    rdd.dependencies_ = null
     Nil
   }
 
