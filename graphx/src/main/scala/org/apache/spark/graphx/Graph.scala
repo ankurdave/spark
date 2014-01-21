@@ -286,7 +286,8 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    * originating from vertices in the active set. If the direction is `Either`, `mapFunc` will be
    * run on edges with *either* vertex in the active set. If the direction is `Both`, `mapFunc` will
    * be run on edges with *both* vertices in the active set. The active set must have the same index
-   * as the graph's vertices.
+   * as the graph's vertices. The activeness information is additionally provided to `mapFunc` via
+   * properties on [[ActiveEdgeTriplet]].
    *
    * @example We can use this function to compute the in-degree of each
    * vertex
@@ -304,7 +305,7 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    *
    */
   def mapReduceTriplets[A: ClassTag](
-      mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+      mapFunc: ActiveEdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
       reduceFunc: (A, A) => A,
       activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None)
     : VertexRDD[A]

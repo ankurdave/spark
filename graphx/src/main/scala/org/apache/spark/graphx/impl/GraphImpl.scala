@@ -195,7 +195,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
   override def mapReduceTriplets[A: ClassTag](
-      mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+      mapFunc: ActiveEdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
       reduceFunc: (A, A) => A,
       activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None) = {
 
@@ -247,7 +247,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       }
 
       // Scan edges and run the map function
-      val et = new EdgeTriplet[VD, ED]
+      val et = new ActiveEdgeTriplet[VD, ED](vPart)
       val mapOutputs = edgeIter.flatMap { e =>
         et.set(e)
         if (mapUsesSrcAttr) {
@@ -288,7 +288,8 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
   /** Test whether the closure accesses the the attribute with name `attrName`. */
   private def accessesVertexAttr(closure: AnyRef, attrName: String): Boolean = {
     try {
-      BytecodeUtils.invokedMethod(closure, classOf[EdgeTriplet[VD, ED]], attrName)
+      (BytecodeUtils.invokedMethod(closure, classOf[EdgeTriplet[VD, ED]], attrName) ||
+        BytecodeUtils.invokedMethod(closure, classOf[ActiveEdgeTriplet[VD, ED]], attrName))
     } catch {
       case _: ClassNotFoundException => true // if we don't know, be conservative
     }

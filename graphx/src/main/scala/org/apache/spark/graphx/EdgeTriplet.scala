@@ -17,6 +17,8 @@
 
 package org.apache.spark.graphx
 
+import org.apache.spark.graphx.impl.VertexPartition
+
 /**
  * An edge triplet represents an edge along with the vertex attributes of its neighboring vertices.
  *
@@ -63,4 +65,14 @@ class EdgeTriplet[VD, ED] extends Edge[ED] {
     if (srcId == vid) srcAttr else { assert(dstId == vid); dstAttr }
 
   override def toString = ((srcId, srcAttr), (dstId, dstAttr), attr).toString()
+}
+
+/**
+ * An edge triplet that additionally has activeness information for its neighboring vertices.
+ *
+ * @param vPart the VertexPartition containing the activeness information
+ */
+class ActiveEdgeTriplet[VD, ED](vPart: VertexPartition[VD]) extends EdgeTriplet[VD, ED] {
+  def srcActive: Boolean = vPart.isActive(srcId)
+  def dstActive: Boolean = vPart.isActive(dstId)
 }

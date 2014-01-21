@@ -240,25 +240,37 @@ class GraphSuite extends FunSuite with LocalSparkContext {
       val allPairs = for (x <- 1 to n; y <- 1 to n) yield (x: VertexId, y: VertexId)
       val complete = Graph.fromEdgeTuples(sc.parallelize(allPairs, 3), 0)
       val vids = complete.mapVertices((vid, attr) => vid).cache()
-      val active = vids.vertices.filter { case (vid, attr) => attr % 2 == 0 }
+      val active = vids.vertices.filter { case (vid, attr) => vid % 2 == 0 }
       val numEvenNeighbors = vids.mapReduceTriplets(et => {
         // Map function should only run on edges with destination in the active set
         if (et.dstId % 2 != 0) {
-          throw new Exception("map ran on edge with dst vid %d, which is odd".format(et.dstId))
+          throw new Exception("map ran on edge with dstId %d, which is odd".format(et.dstId))
+        }
+        // Destination vertices should be marked as active, and source vertices should be active iff
+        // they are even
+        if (!et.dstActive || (et.srcActive != (et.srcId % 2 == 0))) {
+          throw new Exception("activeness was set incorrectly: (%s, %s) and srcId=%d".format(
+            et.srcActive, et.dstActive, et.srcId))
         }
         Iterator((et.srcId, 1))
       }, (a: Int, b: Int) => a + b, Some((active, EdgeDirection.In))).collect.toSet
       assert(numEvenNeighbors === (1 to n).map(x => (x: VertexId, n / 2)).toSet)
 
       // outerJoinVertices followed by mapReduceTriplets(activeSetOpt)
-      val ringEdges = sc.parallelize((0 until n).map(x => (x: VertexId, (x+1) % n: VertexId)), 3)
-      val ring = Graph.fromEdgeTuples(ringEdges, 0) .mapVertices((vid, attr) => vid).cache()
-      val changed = ring.vertices.filter { case (vid, attr) => attr % 2 == 1 }.mapValues(-_).cache()
+      val ringEdges = sc.parallelize((0 until n).map(x => (x: VertexId, (x + 1) % n: VertexId)), 3)
+      val ring = Graph.fromEdgeTuples(ringEdges, 0).mapVertices((vid, attr) => vid).cache()
+      val changed = ring.vertices.filter { case (vid, attr) => vid % 2 == 1 }.mapValues(-_).cache()
       val changedGraph = ring.outerJoinVertices(changed) { (vid, old, newOpt) => newOpt.getOrElse(old) }
       val numOddNeighbors = changedGraph.mapReduceTriplets(et => {
         // Map function should only run on edges with source in the active set
         if (et.srcId % 2 != 1) {
-          throw new Exception("map ran on edge with src vid %d, which is even".format(et.dstId))
+          throw new Exception("map ran on edge with srcId %d, which is even".format(et.srcId))
+        }
+        // Source vertices should be marked as active, and destination vertices should be active iff
+        // they are odd
+        if (!et.srcActive || (et.dstActive != (et.dstId % 2 == 1))) {
+          throw new Exception("activeness was set incorrectly: (%s, %s) and dstId=%d".format(
+            et.srcActive, et.dstActive, et.dstId))
         }
         Iterator((et.dstId, 1))
       }, (a: Int, b: Int) => a + b, Some(changed, EdgeDirection.Out)).collect.toSet
