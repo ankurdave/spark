@@ -211,6 +211,17 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
   def stop() {
     metadataCleaner.cancel()
   }
+
+  def removeAllShuffleStuff() {
+    for (state <- shuffleStates.values;
+         group <- state.allFileGroups;
+         (mapId, _) <- group.mapIdToIndex.iterator;
+         reducerId <- 0 until group.files.length) {
+      val blockId = new ShuffleBlockId(group.shuffleId, mapId, reducerId)
+      blockManager.removeBlock(blockId, tellMaster = false)
+    }
+    shuffleStates.clear()
+  }
 }
 
 private[spark]
@@ -224,7 +235,7 @@ object ShuffleBlockManager {
      * Stores the absolute index of each mapId in the files of this group. For instance,
      * if mapId 5 is the first block in each file, mapIdToIndex(5) = 0.
      */
-    private val mapIdToIndex = new PrimitiveKeyOpenHashMap[Int, Int]()
+    val mapIdToIndex = new PrimitiveKeyOpenHashMap[Int, Int]()
 
     /**
      * Stores consecutive offsets of blocks into each reducer file, ordered by position in the file.

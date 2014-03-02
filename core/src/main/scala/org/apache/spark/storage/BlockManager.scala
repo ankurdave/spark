@@ -329,7 +329,7 @@ private[spark] class BlockManager(
    * never deletes (recent) items.
    */
   def getLocalFromDisk(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
-    diskStore.getValues(blockId, serializer).orElse(
+    memoryStore.getValues(blockId, serializer).orElse(
       sys.error("Block " + blockId + " not found on disk, though it should be"))
   }
 
@@ -349,7 +349,7 @@ private[spark] class BlockManager(
     // As an optimization for map output fetches, if the block is for a shuffle, return it
     // without acquiring a lock; the disk store never deletes (recent) items so this should work
     if (blockId.isShuffle) {
-      diskStore.getBytes(blockId) match {
+      memoryStore.getBytes(blockId) match {
         case Some(bytes) =>
           Some(bytes)
         case None =>
@@ -910,7 +910,7 @@ private[spark] class BlockManager(
     if (info != null) info.synchronized {
       // Removals are idempotent in disk store and memory store. At worst, we get a warning.
       val removedFromMemory = memoryStore.remove(blockId)
-      val removedFromDisk = diskStore.remove(blockId)
+      val removedFromDisk = false //diskStore.remove(blockId)
       val removedFromTachyon = if (tachyonInitialized) tachyonStore.remove(blockId) else false
       if (!removedFromMemory && !removedFromDisk && !removedFromTachyon) {
         logWarning("Block " + blockId + " could not be removed as it was not found in either " +
