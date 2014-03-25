@@ -21,6 +21,7 @@ import java.util.Random
 
 import scala.collection.{mutable, Map}
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.HashSet
 import scala.reflect.{classTag, ClassTag}
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus
@@ -229,6 +230,7 @@ abstract class RDD[T: ClassTag](
     }
   }
 
+  private val previouslyComputed = new HashSet[Partition]
   /**
    * Return the ancestors of the given RDD that are related to it only through a sequence of
    * narrow dependencies. This traverses the given RDD's dependency tree using DFS, but maintains
@@ -258,7 +260,16 @@ abstract class RDD[T: ClassTag](
    */
   private[spark] def computeOrReadCheckpoint(split: Partition, context: TaskContext): Iterator[T] =
   {
-    if (isCheckpointed) firstParent[T].iterator(split, context) else compute(split, context)
+    if (isCheckpointed) {
+      firstParent[T].iterator(split, context)
+    } else {
+      if (previouslyComputed.contains(split)) {
+        throw new Exception("Recomputing RDD %d, partition %d".format(id, split.index))
+      } else {
+        previouslyComputed.add(split)
+      }
+      compute(split, context)
+    }
   }
 
   // Transformations (return a new RDD)
@@ -1183,6 +1194,8 @@ abstract class RDD[T: ClassTag](
   private[spark] def getCreationSite: String = creationSiteInfo.toString
 
   private[spark] def elementClassTag: ClassTag[T] = classTag[T]
+
+  private[spark] val computeSites = new ArrayBuffer[String]
 
   private[spark] var checkpointData: Option[RDDCheckpointData[T]] = None
 

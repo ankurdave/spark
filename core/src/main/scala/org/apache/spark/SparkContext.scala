@@ -1042,6 +1042,10 @@ class SparkContext(config: SparkConf) extends Logging {
     }
     val callSite = getCallSite
     val cleanedFunc = clean(func)
+    rdd.computeSites += callSite
+    if (rdd.computeSites.size > 1) {
+      throw new Exception("RDD %d computed multiple times: %s".format(rdd.id, rdd.computeSites.mkString("\n\n")))
+    }
     logInfo("Starting job: " + callSite)
     val start = System.nanoTime
     dagScheduler.runJob(rdd, cleanedFunc, partitions, callSite, allowLocal,
@@ -1573,4 +1577,3 @@ private[spark] class WritableConverter[T](
     val writableClass: ClassTag[T] => Class[_ <: Writable],
     val convert: Writable => T)
   extends Serializable
-
