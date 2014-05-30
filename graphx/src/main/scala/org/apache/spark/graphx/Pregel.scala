@@ -146,15 +146,11 @@ object Pregel extends Logging {
       activeMessages = messages.count()
 
       logInfo("Pregel finished iteration " + i)
-      // Very ugly code to clear the in-memory shuffle data
-      messages.foreachPartition { iter =>
-        SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
-      }
 
-      // Very ugly code to clear the in-memory shuffle data
-      messages.foreachPartition { iter =>
-        SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
-      }
+      // // Very ugly code to clear the in-memory shuffle data
+      // messages.foreachPartition { iter =>
+      //   SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
+      // }
 
       // Unpersist the RDDs hidden by newly-materialized RDDs
       oldMessages.unpersist(blocking=false)
