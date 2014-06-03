@@ -59,4 +59,3 @@ object MimaExcludes {
         case _ => Seq()
       }
 }
-
