@@ -45,17 +45,6 @@ object Analytics extends Logging {
     }
     val options = mutable.Map(optionsList: _*)
 
-    def pickPartitioner(v: String): PartitionStrategy = {
-      // TODO: Use reflection rather than listing all the partitioning strategies here.
-      v match {
-        case "RandomVertexCut" => RandomVertexCut
-        case "EdgePartition1D" => EdgePartition1D
-        case "EdgePartition2D" => EdgePartition2D
-        case "CanonicalRandomVertexCut" => CanonicalRandomVertexCut
-        case _ => throw new IllegalArgumentException("Invalid PartitionStrategy: " + v)
-      }
-    }
-
     val conf = new SparkConf()
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .set("spark.kryo.registrator", "org.apache.spark.graphx.GraphKryoRegistrator")
@@ -66,7 +55,7 @@ object Analytics extends Logging {
       sys.exit(1)
     }
     val partitionStrategy: Option[PartitionStrategy] = options.remove("partStrategy")
-      .map(pickPartitioner(_))
+      .map(PartitionStrategy.fromString(_))
     val edgeStorageLevel = options.remove("edgeStorageLevel")
       .map(StorageLevel.fromString(_)).getOrElse(StorageLevel.MEMORY_ONLY)
     val vertexStorageLevel = options.remove("vertexStorageLevel")
