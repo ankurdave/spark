@@ -73,6 +73,12 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     this
   }
 
+  override def setName(name: String): Graph[VD, ED] = {
+    vertices.setName(name)
+    edges.setName(name)
+    this
+  }
+
   override def partitionBy(partitionStrategy: PartitionStrategy): Graph[VD, ED] = {
     partitionBy(partitionStrategy, edges.partitions.size)
   }
@@ -237,6 +243,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       vertices.cache()
       // updateF preserves type, so we can use incremental replication
       val newVerts = vertices.leftJoin(other)(updateF).cache()
+        .setName("outerJoinVertices - newVerts")
       val changedVerts = vertices.asInstanceOf[VertexRDD[VD2]].diff(newVerts)
       val newReplicatedVertexView = replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2, ED]]
         .updateVertices(changedVerts)

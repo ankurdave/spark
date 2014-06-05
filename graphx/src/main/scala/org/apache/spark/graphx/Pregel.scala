@@ -120,6 +120,7 @@ object Pregel extends Logging {
     : Graph[VD, ED] =
   {
     var g = graph.mapVertices((vid, vdata) => vprog(vid, vdata, initialMsg)).cache()
+      .setName("Pregel initial graph")
     // compute the messages
     var messages = g.mapReduceTriplets(sendMsg, mergeMsg)
     var activeMessages = messages.count()
@@ -128,17 +129,18 @@ object Pregel extends Logging {
     var i = 0
     while (activeMessages > 0 && i < maxIterations) {
       // Receive the messages. Vertices that didn't get any messages do not appear in newVerts.
-      val newVerts = g.vertices.innerJoin(messages)(vprog).cache()
+      val newVerts = g.vertices.innerJoin(messages)(vprog).cache().setName("Pregel newVerts " + i)
       // Update the graph with the new vertices.
       prevG = g
       g = g.outerJoinVertices(newVerts) { (vid, old, newOpt) => newOpt.getOrElse(old) }
-      g.cache()
+      g.cache().setName("Pregel graph " + i)
 
       val oldMessages = messages
       // Send new messages. Vertices that didn't get any messages don't appear in newVerts, so don't
       // get to send messages. We must cache messages so it can be materialized on the next line,
       // allowing us to uncache the previous iteration.
       messages = g.mapReduceTriplets(sendMsg, mergeMsg, Some((newVerts, activeDirection))).cache()
+        .setName("Pregel messages " + i)
       // The call to count() materializes `messages`, `newVerts`, and the vertices of `g`. This
       // hides oldMessages (depended on by newVerts), newVerts (depended on by messages), and the
       // vertices of prevG (depended on by newVerts, oldMessages, and the vertices of g).

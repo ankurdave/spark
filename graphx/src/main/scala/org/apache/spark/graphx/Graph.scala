@@ -104,6 +104,9 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    */
   def unpersistVertices(blocking: Boolean = true): Graph[VD, ED]
 
+  /** Assigns a name to the RDDs underlying this graph. */
+  def setName(name: String): Graph[VD, ED]
+
   /**
    * Repartitions the edges in the graph according to `partitionStrategy`.
    *
