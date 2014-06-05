@@ -145,9 +145,9 @@ object Pregel extends Logging {
       logInfo("Pregel finished iteration " + i)
 
       // Unpersist the RDDs hidden by newly-materialized RDDs
-      // oldMessages.unpersist(blocking=false)
-      // prevG.unpersistVertices(blocking=false)
-      // prevG.edges.unpersist(blocking=false)
+      oldMessages.unpersist(blocking=false)
+      prevG.unpersistVertices(blocking=false)
+      prevG.edges.unpersist(blocking=false)
       // count the iteration
       i += 1
     }
