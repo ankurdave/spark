@@ -241,6 +241,62 @@ class VertexRDD[@specialized VD: ClassTag](
   }
 
   /**
+   * Joins this RDD with another VertexRDD with the same index. This function will fail if both
+   * VertexRDDs do not share the same index. The resulting vertex set contains an entry for each
+   * vertex in `this`. If `other` is missing any vertex in this VertexRDD, the merge function is
+   * skipped and the old value is used.
+   *
+   * @tparam U the attribute type of the other VertexRDD
+   *
+   * @param other the other VertexRDD with which to join.
+   * @param f the function mapping a vertex id and its attributes in this and the other vertex set
+   * to a new vertex attribute.
+   * @return a VertexRDD based on `this` updated with the results of `f`
+   */
+  def zipJoin[U: ClassTag]
+      (other: VertexRDD[U])(f: (VertexId, VD, U) => VD): VertexRDD[VD] = {
+    val newPartitionsRDD = partitionsRDD.zipPartitions(
+      other.partitionsRDD, preservesPartitioning = true
+    ) { (thisIter, otherIter) =>
+      val thisPart = thisIter.next()
+      val otherPart = otherIter.next()
+      Iterator(thisPart.join(otherPart)(f))
+    }
+    this.withPartitionsRDD(newPartitionsRDD)
+  }
+
+  /**
+   * Joins this RDD with an RDD containing vertex attribute pairs. The resulting vertex set contains
+   * an entry for each vertex in `this`. If `other` is missing any vertex in this VertexRDD, the
+   * merge function is skipped and the old value is used.
+   *
+   * @tparam U the attribute type of the other RDD
+   *
+   * @param other the RDD with which to join.
+   * @param f the function mapping a vertex id and its attributes in this and the other vertex set
+   * to a new vertex attribute.
+   * @return a VertexRDD based on `this` updated with the results of `f`
+   */
+  def join[U: ClassTag]
+      (other: RDD[(VertexId, U)])
+      (f: (VertexId, VD, U) => VD)
+    : VertexRDD[VD] = {
+    // Test if the other vertex is a VertexRDD to choose the optimal join strategy.
+    // If the other set is a VertexRDD then we use the much more efficient zipJoin
+    other match {
+      case other: VertexRDD[_] =>
+        zipJoin[U](other.asInstanceOf[VertexRDD[U]])(f)
+      case _ =>
+        this.withPartitionsRDD[VD](
+          partitionsRDD.zipPartitions(
+            other.copartitionWithVertices(this.partitioner.get), preservesPartitioning = true) {
+            (partIter, msgs) => partIter.map(_.join(msgs)(f))
+          }
+        )
+    }
+  }
+
+  /**
    * Efficiently inner joins this VertexRDD with another VertexRDD sharing the same index. See
    * [[innerJoin]] for the behavior of the join.
    */

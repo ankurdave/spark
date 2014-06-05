@@ -136,6 +136,34 @@ private[graphx] abstract class VertexPartitionBaseOps
     leftJoin(createUsingIndex(other))(f)
   }
 
+  /** Join another VertexPartition. */
+  def join[U: ClassTag]
+      (other: Self[U])
+      (f: (VertexId, VD, U) => VD): Self[VD] = {
+    if (self.index != other.index) {
+      logWarning("Joining two VertexPartitions with different indexes is slow.")
+      join(createUsingIndex(other.iterator))(f)
+    } else {
+      val iterMask = self.mask & other.mask
+      val newValues = new Array[VD](self.capacity)
+      System.arraycopy(self.values, 0, newValues, 0, newValues.length)
+
+      var i = iterMask.nextSetBit(0)
+      while (i >= 0) {
+        newValues(i) = f(self.index.getValue(i), self.values(i), other.values(i))
+        i = iterMask.nextSetBit(i + 1)
+      }
+      this.withValues(newValues)
+    }
+  }
+
+  /** Join another iterator of messages. */
+  def join[U: ClassTag]
+      (other: Iterator[(VertexId, U)])
+      (f: (VertexId, VD, U) => VD): Self[VD] = {
+    join(createUsingIndex(other))(f)
+  }
+
   /** Inner join another VertexPartition. */
   def innerJoin[U: ClassTag, VD2: ClassTag]
       (other: Self[U])
