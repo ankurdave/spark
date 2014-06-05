@@ -60,7 +60,8 @@ private[spark] object StorageUtils {
       val rddName = Option(rdd.name).getOrElse(rdd.id.toString)
       val rddNumPartitions = rdd.partitions.size
       val rddStorageLevel = rdd.getStorageLevel
-      val rddInfo = new RDDInfo(rdd.id, rddName, rddNumPartitions, rddStorageLevel)
+      val rddInfo = new RDDInfo(
+        rdd.id, rddName, rddNumPartitions, rddStorageLevel, rdd.getCreationSite)
       rddInfo
     }.toArray
   }

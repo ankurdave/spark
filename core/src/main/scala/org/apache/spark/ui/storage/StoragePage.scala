@@ -52,7 +52,8 @@ private[ui] class StoragePage(parent: StorageTab) extends WebUIPage("") {
     <tr>
       <td>
         <a href={"%s/storage/rdd?id=%s".format(UIUtils.prependBaseUri(basePath), rdd.id)}>
-          {rdd.name}
+          {rdd.name}<br/>
+          {scala.xml.Unparsed(rdd.creationSite.replace("\n", "<br/>\n"))}
         </a>
       </td>
       <td>{rdd.storageLevel.description}
