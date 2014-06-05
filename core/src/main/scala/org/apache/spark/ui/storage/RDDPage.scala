@@ -20,6 +20,7 @@ package org.apache.spark.ui.storage
 import javax.servlet.http.HttpServletRequest
 
 import scala.xml.Node
+import scala.xml.Text
 
 import org.apache.spark.storage.{BlockId, BlockStatus, StorageStatus, StorageUtils}
 import org.apache.spark.ui.{WebUIPage, UIUtils}
@@ -39,6 +40,7 @@ private[ui] class RDDPage(parent: StorageTab) extends WebUIPage("rdd") {
       return UIUtils.headerSparkPage(Seq[Node](), basePath, appName, "RDD Not Found",
         parent.headerTabs, parent)
     }
+    val creationSite = rddInfo.creationSite.split("\n").flatMap(elem => Seq(Text(elem), <br/>))
 
     // Worker table
     val workers = storageStatusList.map((rddId, _))
@@ -76,6 +78,10 @@ private[ui] class RDDPage(parent: StorageTab) extends WebUIPage("rdd") {
             <li>
               <strong>Disk Size:</strong>
               {Utils.bytesToString(rddInfo.diskSize)}
+            </li>
+            <li>
+              <strong>Creation Site:</strong>
+              {creationSite}
             </li>
           </ul>
         </div>

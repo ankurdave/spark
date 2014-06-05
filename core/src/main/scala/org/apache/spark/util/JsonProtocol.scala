@@ -290,6 +290,7 @@ private[spark] object JsonProtocol {
     ("Memory Size" -> rddInfo.memSize) ~
     ("Tachyon Size" -> rddInfo.tachyonSize) ~
     ("Disk Size" -> rddInfo.diskSize)
+    ("Creation Site" -> rddInfo.creationSite)
   }
 
   def storageLevelToJson(storageLevel: StorageLevel): JValue = {
@@ -609,8 +610,9 @@ private[spark] object JsonProtocol {
     val memSize = (json \ "Memory Size").extract[Long]
     val tachyonSize = (json \ "Tachyon Size").extract[Long]
     val diskSize = (json \ "Disk Size").extract[Long]
+    val creationSite = (json \ "Creation Site").extract[String]
 
-    val rddInfo = new RDDInfo(rddId, name, numPartitions, storageLevel)
+    val rddInfo = new RDDInfo(rddId, name, numPartitions, storageLevel, creationSite)
     rddInfo.numCachedPartitions = numCachedPartitions
     rddInfo.memSize = memSize
     rddInfo.tachyonSize = tachyonSize

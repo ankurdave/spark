@@ -1180,7 +1180,8 @@ abstract class RDD[T: ClassTag](
 
   /** User code that created this RDD (e.g. `textFile`, `parallelize`). */
   @transient private[spark] val creationSiteInfo = Utils.getCallSiteInfo
-  private[spark] def getCreationSite: String = creationSiteInfo.toString
+  @transient private[spark] val fullCreationSite = new Throwable().getStackTrace.mkString("\n")
+  private[spark] def getCreationSite: String = fullCreationSite // creationSiteInfo.toString
 
   private[spark] def elementClassTag: ClassTag[T] = classTag[T]
 
