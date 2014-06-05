@@ -69,6 +69,21 @@ class VertexPartitionSuite extends FunSuite {
     assert(join3.iterator.toSet === Set((0L, 2), (1L, 2), (2L, 1)))
   }
 
+  test("join") {
+    val vp = VertexPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp2a = vp.filter { (vid, attr) => vid <= 1 }.map { (vid, attr) => 2 }
+    val vp2b = VertexPartition(vp2a.iterator)
+    // join with same index
+    val join1 = vp.join(vp2a) { (vid, a, b) => b }
+    assert(join1.iterator.toSet === Set((0L, 2), (1L, 2), (2L, 1)))
+    // join with different indexes
+    val join2 = vp.join(vp2b) { (vid, a, b) => b }
+    assert(join2.iterator.toSet === Set((0L, 2), (1L, 2), (2L, 1)))
+    // join an iterator
+    val join3 = vp.join(vp2a.iterator) { (vid, a, b) => b }
+    assert(join3.iterator.toSet === Set((0L, 2), (1L, 2), (2L, 1)))
+  }
+
   test("innerJoin") {
     val vp = VertexPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val vp2a = vp.filter { (vid, attr) => vid <= 1 }.map { (vid, attr) => 2 }

@@ -285,7 +285,7 @@ class VertexRDD[VD: ClassTag](
     // If the other set is a VertexRDD then we use the much more efficient zipJoin
     other match {
       case other: VertexRDD[_] =>
-        zipJoin[U](other.asInstanceOf[VertexRDD[U]])(f)
+        zipJoin(other)(f)
       case _ =>
         this.withPartitionsRDD[VD](
           partitionsRDD.zipPartitions(
