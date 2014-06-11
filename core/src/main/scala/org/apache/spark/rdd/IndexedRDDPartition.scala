@@ -38,6 +38,7 @@ private[spark] object IndexedRDDPartition {
     : IndexedRDDPartition[V] = {
     var index = LongMap.empty[Int]
     val values = new ArrayBuffer[V]
+    val mask = BitSet.newBuilder
     var i = 0
     iter.foreach { pair =>
       index.get(pair._1) match {
@@ -46,33 +47,37 @@ private[spark] object IndexedRDDPartition {
         case None =>
           index = index.updated(pair._1, i)
           values += pair._2
+          mask += i
           i += 1
       }
     }
-    new IndexedRDDPartition(index, values.toVector)
+    new IndexedRDDPartition(index, values.toVector, mask.result)
   }
 }
 
 private[spark] trait IndexedRDDPartitionBase[@specialized(Long, Int, Double) V] {
   def index: Index
   def values: Vector[V]
+  def mask: BitSet
 
-  def size: Int = index.size
+  def size: Int = mask.size
 
   /** Return the value for the given key. */
   def apply(k: Id): V = values(index(k))
 
   def isDefined(k: Id): Boolean = {
-    index.contains(k)
+    val pos = index.getOrElse(k, -1)
+    pos >= 0 && mask.contains(pos)
   }
 
   def iterator: Iterator[(Id, V)] =
-    index.iterator.map(kv => (kv._1, values(kv._2)))
+    index.iterator.filter(kv => mask.contains(kv._2)).map(kv => (kv._1, values(kv._2)))
 }
 
 private[spark] class IndexedRDDPartition[@specialized(Long, Int, Double) V](
     val index: Index,
-    val values: Vector[V])
+    val values: Vector[V],
+    val mask: BitSet)
    (implicit val vTag: ClassTag[V])
   extends IndexedRDDPartitionBase[V]
   with IndexedRDDPartitionOps[V, IndexedRDDPartition] {
@@ -80,10 +85,14 @@ private[spark] class IndexedRDDPartition[@specialized(Long, Int, Double) V](
   def self: IndexedRDDPartition[V] = this
 
   def withIndex(index: Index): IndexedRDDPartition[V] = {
-    new IndexedRDDPartition(index, values)
+    new IndexedRDDPartition(index, values, mask)
   }
 
   def withValues[V2: ClassTag](values: Vector[V2]): IndexedRDDPartition[V2] = {
-    new IndexedRDDPartition(index, values)
+    new IndexedRDDPartition(index, values, mask)
+  }
+
+  def withMask(mask: BitSet): IndexedRDDPartition[V] = {
+    new IndexedRDDPartition(index, values, mask)
   }
 }

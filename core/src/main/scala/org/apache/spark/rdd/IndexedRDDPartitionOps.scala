@@ -17,6 +17,7 @@
 
 package org.apache.spark.rdd
 
+import scala.collection.immutable.BitSet
 import scala.collection.immutable.Vector
 import scala.language.higherKinds
 import scala.reflect.ClassTag
@@ -35,12 +36,12 @@ private[spark] trait IndexedRDDPartitionOps[V, Self[X] <: IndexedRDDPartitionBas
 
   def withIndex(index: Index): Self[V]
   def withValues[V2: ClassTag](values: Vector[V2]): Self[V2]
+  def withMask(mask: BitSet): Self[V]
 
   def map[V2: ClassTag](f: (Id, V) => V2): Self[V2] = {
-    // Construct a view of the map transformation
     var newValues = Vector.fill[V2](self.values.size)(null.asInstanceOf[V2])
     self.index.foreach { kv =>
-      newValues(kv._2) = f(kv._1, values(kv._2))
+      newValues = newValues.updated(kv._2, f(kv._1, values(kv._2)))
     }
     this.withValues(newValues)
   }
@@ -55,6 +56,10 @@ private[spark] trait IndexedRDDPartitionOps[V, Self[X] <: IndexedRDDPartitionBas
    *       modifies the bitmap index and so no new values are allocated.
    */
   def filter(pred: (Id, V) => Boolean): Self[V] = {
+    val newMask = BitSet.newBuilder
+    self.index.foreach { kv =>
+      newMask
+    }
     val newIndex = self.index.filter { kv => pred(kv._1, self.values(kv._2)) }
     this.withIndex(newIndex)
   }
