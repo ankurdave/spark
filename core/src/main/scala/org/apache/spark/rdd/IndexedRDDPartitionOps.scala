@@ -17,12 +17,11 @@
 
 package org.apache.spark.rdd
 
+import scala.collection.immutable.Vector
 import scala.language.higherKinds
 import scala.reflect.ClassTag
 
 import org.apache.spark.Logging
-import org.apache.spark.util.collection.BitSet
-import org.apache.spark.util.collection.PrimitiveKeyOpenHashMap
 
 import IndexedRDD.Id
 import IndexedRDDPartition.Index
@@ -35,16 +34,13 @@ private[spark] trait IndexedRDDPartitionOps[V, Self[X] <: IndexedRDDPartitionBas
   implicit def vTag: ClassTag[V]
 
   def withIndex(index: Index): Self[V]
-  def withValues[V2: ClassTag](values: Array[V2]): Self[V2]
-  def withMask(mask: BitSet): Self[V]
+  def withValues[V2: ClassTag](values: Vector[V2]): Self[V2]
 
   def map[V2: ClassTag](f: (Id, V) => V2): Self[V2] = {
     // Construct a view of the map transformation
-    val newValues = new Array[V2](self.capacity)
-    var i = self.mask.nextSetBit(0)
-    while (i >= 0) {
-      newValues(i) = f(self.index.getValue(i), self.values(i))
-      i = self.mask.nextSetBit(i + 1)
+    var newValues = Vector.fill[V2](self.values.size)(null.asInstanceOf[V2])
+    self.index.foreach { kv =>
+      newValues(kv._2) = f(kv._1, values(kv._2))
     }
     this.withValues(newValues)
   }
@@ -59,17 +55,8 @@ private[spark] trait IndexedRDDPartitionOps[V, Self[X] <: IndexedRDDPartitionBas
    *       modifies the bitmap index and so no new values are allocated.
    */
   def filter(pred: (Id, V) => Boolean): Self[V] = {
-    // Allocate the array to store the results into
-    val newMask = new BitSet(self.capacity)
-    // Iterate over the active bits in the old mask and evaluate the predicate
-    var i = self.mask.nextSetBit(0)
-    while (i >= 0) {
-      if (pred(self.index.getValue(i), self.values(i))) {
-        newMask.set(i)
-      }
-      i = self.mask.nextSetBit(i + 1)
-    }
-    this.withMask(newMask)
+    val newIndex = self.index.filter { kv => pred(kv._1, self.values(kv._2)) }
+    this.withIndex(newIndex)
   }
 
   /**
@@ -77,26 +64,19 @@ private[spark] trait IndexedRDDPartitionOps[V, Self[X] <: IndexedRDDPartitionBas
    * the values from `other`. The indices of `this` and `other` must be the same.
    */
   def diff(other: Self[V]): Self[V] = {
-    if (self.index != other.index) {
-      logWarning("Diffing two IndexedRDDPartitions with different indexes is slow.")
-      diff(createUsingIndex(other.iterator))
-    } else {
-      val newMask = self.mask & other.mask
-      var i = newMask.nextSetBit(0)
-      while (i >= 0) {
-        if (self.values(i) == other.values(i)) {
-          newMask.unset(i)
-        }
-        i = newMask.nextSetBit(i + 1)
-      }
-      this.withValues(other.values).withMask(newMask)
-    }
+    val newIndex = self.index.intersectionWith(
+      other.index, (id, a, b) => if (self.values(a) != other.values(b)) b else -1)
+      .filter(_._2 != -1)
+    this.withIndex(newIndex).withValues(other.values)
   }
 
   /** Left outer join another IndexedRDDPartition. */
   def leftJoin[V2: ClassTag, V3: ClassTag]
       (other: Self[V2])
       (f: (Id, V, Option[V2]) => V3): Self[V3] = {
+    val intersection = self.index.intersectionWith(
+      other.index, (id, a, b) => f(id, self.values(a), Some(other.values(b))))
+    val left = self.index.
     if (self.index != other.index) {
       logWarning("Joining two IndexedRDDPartitions with different indexes is slow.")
       leftJoin(createUsingIndex(other.iterator))(f)

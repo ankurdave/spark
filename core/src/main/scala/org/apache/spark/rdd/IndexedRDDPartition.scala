@@ -17,63 +17,62 @@
 
 package org.apache.spark.rdd
 
+import scala.collection.mutable.ArrayBuffer
+import scala.collection.immutable.BitSet
+import scala.collection.immutable.LongMap
+import scala.collection.immutable.Vector
 import scala.language.higherKinds
 import scala.reflect.ClassTag
-
-import org.apache.spark.util.collection.BitSet
-import org.apache.spark.util.collection.OpenHashSet
-import org.apache.spark.util.collection.PrimitiveKeyOpenHashMap
 
 import IndexedRDD.Id
 import IndexedRDDPartition.Index
 
 private[spark] object IndexedRDDPartition {
-  type Index = OpenHashSet[Id]
+  type Index = LongMap[Int]
 
-  // Same as apply(iter, (a, b) => b)
   def apply[V: ClassTag](iter: Iterator[(Id, V)]): IndexedRDDPartition[V] = {
-    val map = new PrimitiveKeyOpenHashMap[Id, V]
-    iter.foreach { pair =>
-      map(pair._1) = pair._2
-    }
-    new IndexedRDDPartition(map.keySet, map._values, map.keySet.getBitSet)
+    IndexedRDDPartition(iter, (a, b) => b)
   }
 
   def apply[V: ClassTag](iter: Iterator[(Id, V)], mergeFunc: (V, V) => V)
     : IndexedRDDPartition[V] = {
-    val map = new PrimitiveKeyOpenHashMap[Id, V]
+    var index = LongMap.empty[Int]
+    val values = new ArrayBuffer[V]
+    var i = 0
     iter.foreach { pair =>
-      map.setMerge(pair._1, pair._2, mergeFunc)
+      index.get(pair._1) match {
+        case Some(iExisting) =>
+          values(iExisting) = mergeFunc(values(iExisting), pair._2)
+        case None =>
+          index = index.updated(pair._1, i)
+          values += pair._2
+          i += 1
+      }
     }
-    new IndexedRDDPartition(map.keySet, map._values, map.keySet.getBitSet)
+    new IndexedRDDPartition(index, values.toVector)
   }
 }
 
 private[spark] trait IndexedRDDPartitionBase[@specialized(Long, Int, Double) V] {
   def index: Index
-  def values: Array[V]
-  def mask: BitSet
+  def values: Vector[V]
 
-  val capacity: Int = index.capacity
-
-  def size: Int = mask.cardinality()
+  def size: Int = index.size
 
   /** Return the value for the given key. */
-  def apply(k: Id): V = values(index.getPos(k))
+  def apply(k: Id): V = values(index(k))
 
   def isDefined(k: Id): Boolean = {
-    val pos = index.getPos(k)
-    pos >= 0 && mask.get(pos)
+    index.contains(k)
   }
 
   def iterator: Iterator[(Id, V)] =
-    mask.iterator.map(ind => (index.getValue(ind), values(ind)))
+    index.iterator.map(kv => (kv._1, values(kv._2)))
 }
 
 private[spark] class IndexedRDDPartition[@specialized(Long, Int, Double) V](
     val index: Index,
-    val values: Array[V],
-    val mask: BitSet)
+    val values: Vector[V])
    (implicit val vTag: ClassTag[V])
   extends IndexedRDDPartitionBase[V]
   with IndexedRDDPartitionOps[V, IndexedRDDPartition] {
@@ -81,14 +80,10 @@ private[spark] class IndexedRDDPartition[@specialized(Long, Int, Double) V](
   def self: IndexedRDDPartition[V] = this
 
   def withIndex(index: Index): IndexedRDDPartition[V] = {
-    new IndexedRDDPartition(index, values, mask)
+    new IndexedRDDPartition(index, values)
   }
 
-  def withValues[V2: ClassTag](values: Array[V2]): IndexedRDDPartition[V2] = {
-    new IndexedRDDPartition(index, values, mask)
-  }
-
-  def withMask(mask: BitSet): IndexedRDDPartition[V] = {
-    new IndexedRDDPartition(index, values, mask)
+  def withValues[V2: ClassTag](values: Vector[V2]): IndexedRDDPartition[V2] = {
+    new IndexedRDDPartition(index, values)
   }
 }
