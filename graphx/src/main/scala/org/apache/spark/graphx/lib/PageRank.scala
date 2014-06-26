@@ -92,16 +92,18 @@ object PageRank extends Logging {
 
     // Define the three functions needed to implement PageRank in the GraphX
     // version of Pregel
-    def vertexProgram(id: VertexId, attr: Double, msgSum: Double): Double =
-      resetProb + (1.0 - resetProb) * msgSum
-    def sendMessage(edge: EdgeTriplet[Double, Double]) =
-      Iterator((edge.dstId, edge.srcAttr * edge.attr))
+    def vertexProgram(id: VertexId, state: (Double, Boolean), msgSum: Option[Double], ctx: PregelContext) = {
+      (resetProb + (1.0 - resetProb) * msgSum.getOrElse(0.0), true)
+    }
+
+    def sendMessage(edge: EdgeTriplet[(Double, Boolean), Double], ctx: PregelContext) = {
+      Iterator((edge.dstId, edge.srcAttr._1 * edge.attr))
+    }
+
     def messageCombiner(a: Double, b: Double): Double = a + b
-    // The initial message received by all vertices in PageRank
-    val initialMessage = 0.0
 
     // Execute pregel for a fixed number of iterations.
-    Pregel(pagerankGraph, initialMessage, numIter, activeDirection = EdgeDirection.Out)(
+    Pregel.run(pagerankGraph, numIter, activeDirection = EdgeDirection.Out)(
       vertexProgram, sendMessage, messageCombiner)
   }
 
@@ -131,24 +133,28 @@ object PageRank extends Logging {
       }
       // Set the weight on the edges based on the degree
       .mapTriplets( e => 1.0 / e.srcAttr )
-      // Set the vertex attributes to (initalPR, delta = 0)
-      .mapVertices( (id, attr) => (0.0, 0.0) )
+      // Set the vertex attributes to (currentPr, deltaToSend)
+      .mapVertices( (id, attr) => (resetProb, 1.0 - resetProb) )
       .cache()
 
     // Define the three functions needed to implement PageRank in the GraphX
     // version of Pregel
-    def vertexProgram(id: VertexId, attr: (Double, Double), msgSum: Double): (Double, Double) = {
-      val (oldPR, lastDelta) = attr
-      val newPR = oldPR + (1.0 - resetProb) * msgSum
-      (newPR, newPR - oldPR)
+    def vertexProgram(id: VertexId, attr: ((Double, Double), Boolean), msgSum: Option[Double], ctx: PregelContext) = {
+      var ((oldPR, pendingDelta), wasActive) = attr
+      val newPR = oldPR + (1.0 - resetProb) * msgSum.getOrElse(0.0)
+      // if we were active then we sent the pending delta on the last iteration
+      if (wasActive) {
+        pendingDelta = 0.0
+      }
+      pendingDelta += msgSum.getOrElse(0.0)
+      val isActive = math.abs(pendingDelta) >= tol
+      ((newPR, pendingDelta), isActive)
     }
 
-    def sendMessage(edge: EdgeTriplet[(Double, Double), Double]) = {
-      if (edge.srcAttr._2 > tol) {
-        Iterator((edge.dstId, edge.srcAttr._2 * edge.attr))
-      } else {
-        Iterator.empty
-      }
+    def sendMessage(edge: EdgeTriplet[((Double, Double), Boolean), Double], ctx: PregelContext) = {
+      val ((srcPr, srcDelta), srcIsActive) = edge.srcAttr
+      assert(srcIsActive)
+      Iterator((edge.dstId, srcDelta * edge.attr))
     }
 
     def messageCombiner(a: Double, b: Double): Double = a + b
@@ -157,7 +163,7 @@ object PageRank extends Logging {
     val initialMessage = resetProb / (1.0 - resetProb)
 
     // Execute a dynamic version of Pregel.
-    Pregel(pagerankGraph, initialMessage, activeDirection = EdgeDirection.Out)(
+    Pregel.run(pagerankGraph, activeDirection = EdgeDirection.Out)(
       vertexProgram, sendMessage, messageCombiner)
       .mapVertices((vid, attr) => attr._1)
   } // end of deltaPageRank
