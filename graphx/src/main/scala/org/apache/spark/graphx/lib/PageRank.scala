@@ -94,12 +94,13 @@ object PageRank extends Logging {
 
     // Define the three functions needed to implement PageRank in the GraphX
     // version of Pregel
-    def vertexProgram(id: VertexId, oldPR: Double, msgSum: Option[Double], ctx: VertexContext) = {
-      resetProb + (1.0 - resetProb) * msgSum.getOrElse(0.0)
+    def vertexProgram(iter: Int, id: VertexId, oldPR: Double, active: Boolean,
+                      msgSum: Option[Double]) = {
+      (resetProb + (1.0 - resetProb) * msgSum.getOrElse(0.0), true)
     }
 
-    def sendMessage(edge: EdgeTriplet[Double, Double], ctx: EdgeContext) = {
-      Iterator((edge.dstId, edge.srcAttr * edge.attr))
+    def sendMessage(iter: Int, edge: EdgeTriplet[(Double, Boolean), Double]) = {
+      Iterator((edge.dstId, edge.srcAttr._1 * edge.attr))
     }
 
     def messageCombiner(a: Double, b: Double): Double = a + b
@@ -143,23 +144,22 @@ object PageRank extends Logging {
 
     // Define the three functions needed to implement PageRank in the GraphX
     // version of Pregel
-    def vertexProgram(id: VertexId, attr: (Double, Double), msgSum: Option[Double], ctx: VertexContext) = {
+    def vertexProgram(iter: Int, id: VertexId, attr: (Double, Double), wasActive: Boolean,
+                      msgSum: Option[Double]) = {
       var (oldPR, pendingDelta) = attr
       val newPR = oldPR + msgSum.getOrElse(0.0)
       // if we were active then we sent the pending delta on the last iteration
-      if (ctx.wasActive) {
+      if (wasActive) {
         pendingDelta = 0.0
       }
       pendingDelta += (1.0 - resetProb) * msgSum.getOrElse(0.0)
-      if (math.abs(pendingDelta) <= tol) {
-        ctx.deactivate()
-      }
-      (newPR, pendingDelta)
+      val isActive = math.abs(pendingDelta) >= tol
+      ((newPR, pendingDelta), isActive)
     }
 
-    def sendMessage(edge: EdgeTriplet[(Double, Double), Double], ctx: EdgeContext) = {
-      val (srcPr, srcDelta) = edge.srcAttr
-      assert(ctx.srcIsActive)
+    def sendMessage(iter: Int, edge: EdgeTriplet[((Double, Double), Boolean), Double]) = {
+      val ((srcPr, srcDelta), srcIsActive) = edge.srcAttr
+      assert(srcIsActive)
       Iterator((edge.dstId, srcDelta * edge.attr))
     }
 
