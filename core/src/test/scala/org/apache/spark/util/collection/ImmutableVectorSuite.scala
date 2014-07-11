@@ -21,6 +21,8 @@ import scala.util.Random
 
 import org.scalatest.FunSuite
 
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
 import org.apache.spark.util.SizeEstimator
 
 class ImmutableVectorSuite extends FunSuite {
@@ -32,6 +34,38 @@ class ImmutableVectorSuite extends FunSuite {
     } yield (1 << shift) + offset
     for (size <- sizes) {
       val v = ImmutableVector.fromArray((0 until size).toArray)
+      assert(v.size === size)
+      for (i <- 0 until size) {
+        assert(v(i) == i)
+      }
+    }
+  }
+
+  test("fromObjectArray - Kryo") {
+    val conf = new SparkConf()
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+    val sc = new SparkContext("local", "test", conf)
+    val sizes = for {
+      shift <- 0 to 20
+      offset <- Array(-1, 0, 1)
+    } yield (1 << shift) + offset
+    for (size <- sizes) {
+      val v = ImmutableVector.fromObjectArray((0 until size).toArray)
+      assert(v.size === size)
+      for (i <- 0 until size) {
+        assert(v(i) == i)
+      }
+    }
+  }
+
+  test("fromObjectArray - Java") {
+    val sc = new SparkContext("local", "test")
+    val sizes = for {
+      shift <- 0 to 20
+      offset <- Array(-1, 0, 1)
+    } yield (1 << shift) + offset
+    for (size <- sizes) {
+      val v = ImmutableVector.fromObjectArray((0 until size).toArray)
       assert(v.size === size)
       for (i <- 0 until size) {
         assert(v(i) == i)
