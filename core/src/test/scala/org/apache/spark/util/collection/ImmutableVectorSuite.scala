@@ -36,7 +36,7 @@ class ImmutableVectorSuite extends FunSuite {
       val v = ImmutableVector.fromArray((0 until size).toArray)
       assert(v.size === size)
       for (i <- 0 until size) {
-        assert(v(i) == i)
+        assert(v(i) === i)
       }
     }
   }
@@ -53,7 +53,7 @@ class ImmutableVectorSuite extends FunSuite {
       val v = ImmutableVector.fromObjectArray((0 until size).toArray)
       assert(v.size === size)
       for (i <- 0 until size) {
-        assert(v(i) == i)
+        assert(v(i) === i)
       }
     }
   }
@@ -68,7 +68,7 @@ class ImmutableVectorSuite extends FunSuite {
       val v = ImmutableVector.fromObjectArray((0 until size).toArray)
       assert(v.size === size)
       for (i <- 0 until size) {
-        assert(v(i) == i)
+        assert(v(i) === i)
       }
     }
   }
@@ -83,7 +83,7 @@ class ImmutableVectorSuite extends FunSuite {
       val iter = v.iterator
       var i = 0
       while (iter.hasNext) {
-        assert(iter.next() == i)
+        assert(iter.next() === i)
         i += 1
       }
       assert(i == size)
@@ -99,7 +99,7 @@ class ImmutableVectorSuite extends FunSuite {
       var v = ImmutableVector.fromArray((0 until size).toArray)
       for (i <- 0 until size) {
         v = v.updated(i, 0)
-        assert(v(i) == 0)
+        assert(v(i) === 0)
       }
     }
   }

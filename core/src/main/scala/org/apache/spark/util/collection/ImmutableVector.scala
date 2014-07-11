@@ -187,7 +187,6 @@ private class PrimitiveLeafNode[@specialized(Long, Int) A: ClassTag](
   override def numChildren = children.length
 }
 
-// SparkEnv.get.serializer.newInstance
 /** A leaf node in the vector tree containing up to 32 vector elements. */
 private class SerializingLeafNode[@specialized(Long, Int) A: ClassTag](
     childOffsets: Array[Int],
@@ -238,9 +237,11 @@ private object SerializingLeafNode {
     while (i < children.length) {
       newChildOffsets(i) = newChildBytes.size
       ser.writeObject(children(i))
+      ser.flush()
       i += 1
     }
-    println(s"From ${children.toList} created SerializingLeafNode(${newChildOffsets.toList}, ${newChildBytes.size})")
+    ser.close()
+    println(s"From ${children.toList} created SerializingLeafNode(${newChildOffsets.toList}, ${newChildBytes.size}: ${newChildBytes.toByteArray.mkString(" ")})")
     new SerializingLeafNode(newChildOffsets, newChildBytes.toByteArray, serializer)
   }
 
