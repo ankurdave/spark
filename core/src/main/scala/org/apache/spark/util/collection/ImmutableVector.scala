@@ -17,14 +17,12 @@
 
 package org.apache.spark.util.collection
 
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
+import java.io.OutputStream
 import java.nio.ByteBuffer
 
 import scala.reflect.ClassTag
-
-import org.apache.spark.SparkEnv
-import org.apache.spark.serializer.SerializerInstance
 
 /**
  * An immutable vector that supports efficient point updates. Similarly to
@@ -45,20 +43,21 @@ private[spark] object ImmutableVector {
   def empty[A: ClassTag]: ImmutableVector[A] = new ImmutableVector(0, emptyNode)
 
   def fromArray[A: ClassTag](array: Array[A]): ImmutableVector[A] = {
-    fromArray(array, 0, array.length)
+    fromArray(array, false)
   }
 
-  def fromArray[A: ClassTag](array: Array[A], start: Int, end: Int): ImmutableVector[A] = {
-    new ImmutableVector(end - start, nodeFromArray(array, start, end))
+  def fromArray[A: ClassTag](array: Array[A], serialize: Boolean): ImmutableVector[A] = {
+    fromArray(array, 0, array.length, serialize)
   }
 
-  def fromObjectArray[A: ClassTag](array: Array[A]): ImmutableVector[A] = {
-    fromObjectArray(array, 0, array.length)
+  def fromArray[A: ClassTag](
+      array: Array[A], start: Int, end: Int): ImmutableVector[A] = {
+    fromArray(array, start, end, false)
   }
 
-  def fromObjectArray[A: ClassTag](array: Array[A], start: Int, end: Int): ImmutableVector[A] = {
-    new ImmutableVector(
-      end - start, nodeFromArray(array, start, end, Some(SparkEnv.get.serializer.newInstance)))
+  def fromArray[A: ClassTag](
+      array: Array[A], start: Int, end: Int, serialize: Boolean): ImmutableVector[A] = {
+    new ImmutableVector(end - start, nodeFromArray(array, start, end, serialize))
   }
 
   def fill[A: ClassTag](n: Int)(a: A): ImmutableVector[A] = {
@@ -67,19 +66,17 @@ private[spark] object ImmutableVector {
   }
 
   /** Returns the root of a 32-ary tree representing the specified interval into the array. */
-  private def nodeFromArray[A: ClassTag](
-      array: Array[A], start: Int, end: Int,
-      serializer: Option[SerializerInstance] = None): VectorNode[A] = {
+  private def nodeFromArray[A: ClassTag]
+      (array: Array[A], start: Int, end: Int, serialize: Boolean)
+      (implicit ser: TypeSerializable[A] = null): VectorNode[A] = {
     val length = end - start
     if (length == 0) {
       emptyNode
     } else {
       val depth = depthOf(length)
       if (depth == 0) {
-        serializer match {
-          case Some(s) => SerializingLeafNode.fromObjectArray(array.slice(start, end), s)
-          case None => new PrimitiveLeafNode(array.slice(start, end))
-        }
+        if (serialize && ser != null) SerializingLeafNode.fromObjectArray(array.slice(start, end))
+        else new PrimitiveLeafNode(array.slice(start, end))
       } else {
         val shift = 5 * depth
         val numChildren = ((length - 1) >> shift) + 1
@@ -91,7 +88,7 @@ private[spark] object ImmutableVector {
           if (end < childEnd) {
             childEnd = end
           }
-          children(i) = nodeFromArray(array, childStart, childEnd, serializer)
+          children(i) = nodeFromArray(array, childStart, childEnd, serialize)
           i += 1
         }
         new InternalNode(children, depth)
@@ -118,6 +115,7 @@ private sealed trait VectorNode[@specialized(Long, Int) A] extends Serializable 
   def apply(index: Int): A
   def updated(index: Int, elem: A): VectorNode[A]
   def numChildren: Int
+  require(numChildren <= 32, s"nodes cannot have more than 32 children (got $numChildren)")
 }
 
 /** An internal node in the vector tree (one containing other nodes rather than vector elements). */
@@ -127,8 +125,6 @@ private class InternalNode[@specialized(Long, Int) A: ClassTag](
   extends VectorNode[A] {
 
   require(children.length > 0, "InternalNode must have children")
-  require(children.length <= 32,
-    s"nodes cannot have more than 32 children (got ${children.length})")
   require(depth >= 1, s"InternalNode must have depth >= 1 (got $depth)")
 
   def childAt(index: Int): VectorNode[A] = children(index)
@@ -172,9 +168,6 @@ private class PrimitiveLeafNode[@specialized(Long, Int) A: ClassTag](
     children: Array[A])
   extends LeafNode[A] {
 
-  require(children.length <= 32,
-    s"nodes cannot have more than 32 children (got ${children.length})")
-
   override def apply(index: Int): A = children(index)
 
   override def updated(index: Int, elem: A) = {
@@ -188,64 +181,59 @@ private class PrimitiveLeafNode[@specialized(Long, Int) A: ClassTag](
 }
 
 /** A leaf node in the vector tree containing up to 32 vector elements. */
-private class SerializingLeafNode[@specialized(Long, Int) A: ClassTag](
+private class SerializingLeafNode[@specialized(Long, Int) A: ClassTag : TypeSerializable](
     childOffsets: Array[Int],
-    childBytes: Array[Byte],
-    serializer: SerializerInstance)
+    childBytes: Array[Byte])
   extends LeafNode[A] {
-
-  require(childOffsets.length <= 32,
-    s"nodes cannot have more than 32 children (got ${childOffsets.length})")
 
   override def apply(index: Int): A = {
     val start = childOffsets(index)
-    val end = if (index + 1 < childOffsets.length) childOffsets(index + 1) else childBytes.length
-    val buf = ByteBuffer.wrap(childBytes, start, end - start)
-    serializer.deserialize(buf)
+    implicitly[TypeSerializable[A]].deserialize(childBytes, start)
   }
 
   override def updated(index: Int, elem: A) = {
     val start = childOffsets(index)
     val end = if (index + 1 < childOffsets.length) childOffsets(index + 1) else childBytes.length
 
-    val newChildBytes = new ByteArrayOutputStream()
+    val elemBytes = implicitly[TypeSerializable[A]].serialize(elem)
+    val sizeDelta = elemBytes.length - (end - start)
+
+    val newChildBytes = new Array[Byte](childBytes.length + sizeDelta)
     val newChildOffsets = new Array[Int](childOffsets.length)
-    newChildBytes.write(childBytes, 0, start)
-    System.arraycopy(childOffsets, 0, newChildOffsets, 0, start)
-    serializer.serializeStream(newChildBytes).writeObject(elem)
-    val sizeDelta = newChildBytes.size - end
-    newChildBytes.write(childBytes, end, childBytes.length - end)
-    var i = index
+    // Copy elements and offsets before index
+    System.arraycopy(childBytes, 0, newChildBytes, 0, start)
+    System.arraycopy(childOffsets, 0, newChildOffsets, 0, index + 1)
+    // Copy element at index
+    System.arraycopy(elemBytes, 0, newChildBytes, start, elemBytes.length)
+    // Copy elements and offsets after index
+    System.arraycopy(childBytes, end, newChildBytes, end + sizeDelta, childBytes.length - end)
+    var i = index + 1
     while (i < childOffsets.length) {
       newChildOffsets(i) = childOffsets(i) + sizeDelta
       i += 1
     }
 
-    new SerializingLeafNode(newChildOffsets, newChildBytes.toByteArray, serializer)
+    new SerializingLeafNode(newChildOffsets, newChildBytes)
   }
 
   override def numChildren = childOffsets.length
 }
 
 private object SerializingLeafNode {
-  def fromObjectArray[A: ClassTag](
-      children: Array[A], serializer: SerializerInstance): SerializingLeafNode[A] = {
+  def fromObjectArray[A: ClassTag : TypeSerializable](
+      children: Array[A]): SerializingLeafNode[A] = {
     val newChildBytes = new ByteArrayOutputStream()
-    val ser = serializer.serializeStream(newChildBytes)
     val newChildOffsets = new Array[Int](children.length)
+    val s = new DataOutputStream(newChildBytes)
     var i = 0
     while (i < children.length) {
       newChildOffsets(i) = newChildBytes.size
-      ser.writeObject(children(i))
-      ser.flush()
+      implicitly[TypeSerializable[A]].serializeToStream(children(i), s)
+      s.flush()
       i += 1
     }
-    ser.close()
-    println(s"From ${children.toList} created SerializingLeafNode(${newChildOffsets.toList}, ${newChildBytes.size}: ${newChildBytes.toByteArray.mkString(" ")})")
-    new SerializingLeafNode(newChildOffsets, newChildBytes.toByteArray, serializer)
+    new SerializingLeafNode(newChildOffsets, newChildBytes.toByteArray)
   }
-
-
 }
 
 /** An iterator that walks through the vector tree. */

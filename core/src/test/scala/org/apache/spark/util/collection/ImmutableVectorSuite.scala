@@ -41,38 +41,6 @@ class ImmutableVectorSuite extends FunSuite {
     }
   }
 
-  test("fromObjectArray - Kryo") {
-    val conf = new SparkConf()
-      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-    val sc = new SparkContext("local", "test", conf)
-    val sizes = for {
-      shift <- 0 to 20
-      offset <- Array(-1, 0, 1)
-    } yield (1 << shift) + offset
-    for (size <- sizes) {
-      val v = ImmutableVector.fromObjectArray((0 until size).toArray)
-      assert(v.size === size)
-      for (i <- 0 until size) {
-        assert(v(i) === i)
-      }
-    }
-  }
-
-  test("fromObjectArray - Java") {
-    val sc = new SparkContext("local", "test")
-    val sizes = for {
-      shift <- 0 to 20
-      offset <- Array(-1, 0, 1)
-    } yield (1 << shift) + offset
-    for (size <- sizes) {
-      val v = ImmutableVector.fromObjectArray((0 until size).toArray)
-      assert(v.size === size)
-      for (i <- 0 until size) {
-        assert(v(i) === i)
-      }
-    }
-  }
-
   test("iterator") {
     val sizes = for {
       shift <- 0 to 25
@@ -103,4 +71,50 @@ class ImmutableVectorSuite extends FunSuite {
       }
     }
   }
-}
+
+  test("SerializingLeafNode[Int]") {
+    val sizes = for {
+      shift <- 0 to 20
+      offset <- Array(-1, 0, 1)
+    } yield (1 << shift) + offset
+    for (size <- sizes) {
+      val v = ImmutableVector.fromArray((0 until size).toArray, true)
+      assert(v.size === size)
+      for (i <- 0 until size) {
+        assert(v(i) === i)
+        assert(v.updated(i, 0)(i) == 0)
+      }
+    }
+  }
+
+  test("SerializingLeafNode[(Int, Double)]") {
+    val sizes = for {
+      shift <- 0 to 20
+      offset <- Array(-1, 0, 1)
+    } yield (1 << shift) + offset
+    for (size <- sizes) {
+      val v = ImmutableVector.fromArray((0 until size).map(x => (x, x + 0.1d)).toArray, true)
+      assert(v.size === size)
+      for (i <- 0 until size) {
+        assert(v(i) === (i, i + 0.1d))
+        assert(v.updated(i, (1, 2d))(i) == (1, 2d))
+      }
+    }
+  }
+
+  test("SerializingLeafNode[Any]") {
+    val sc = new SparkContext("local", "test")
+    implicit val useSparkSerializer = TypeSerializable.useSparkSerializer
+    val sizes = for {
+      shift <- 0 to 20
+      offset <- Array(-1, 0, 1)
+    } yield (1 << shift) + offset
+    for (size <- sizes) {
+      val v = ImmutableVector.fromArray((0 until size).map(x => x.toString).toArray, true)
+      assert(v.size === size)
+      for (i <- 0 until size) {
+        assert(v(i) === i.toString)
+        assert(v.updated(i, "foo")(i) == "foo")
+      }
+    }
+  }}
