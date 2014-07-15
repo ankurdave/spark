@@ -168,6 +168,42 @@ object IndexedRDDBenchmark {
     end = System.nanoTime
     println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
 
+    println("Constructing Array[(Int, Int)]...")
+    val pairArray = Array.fill(elemsPerPartition)((1, 2))
+    println("Constructing ImmutableVector[(Int, Int)]...")
+    val pairVector = ImmutableVector.fromArray(pairArray)
+    println("Constructing ImmutableVector[(Int, Int)] (serialized)...")
+    val sPairVector = ImmutableVector.fromArray(pairArray, true)
+    println(s"Done. Generated ${elemsPerPartition} elements.")
+
+    println(s"Array[(Int, Int)] is ${SizeEstimator.estimate(pairArray)} bytes.")
+    println(s"ImmutableVector[(Int, Int)] is ${SizeEstimator.estimate(pairVector)} bytes.")
+    println(s"ImmutableVector[(Int, Int)] (serialized) is ${SizeEstimator.estimate(sPairVector)} bytes.")
+
+    println("Testing array scan performance...")
+    start = System.nanoTime
+    for (t <- 1 to trials) {
+      pairArray.iterator.foreach(x => {})
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
+
+    println("Testing vector scan performance...")
+    start = System.nanoTime
+    for (t <- 1 to trials) {
+      pairVector.iterator.foreach(x => {})
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
+
+    println("Testing serialized vector scan performance...")
+    start = System.nanoTime
+    for (t <- 1 to trials) {
+      sPairVector.iterator.foreach(x => {})
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
+
     println("========== ImmutableBitSet ==========")
     println("Constructing BitSet...")
     val bs = new BitSet(elemsPerPartition)
