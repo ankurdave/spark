@@ -133,8 +133,9 @@ object IndexedRDDBenchmark {
     val objVector = ImmutableVector.fromArray(objArray)
     println("Constructing ImmutableVector[Object] (serialized)...")
     implicit val aSerializer = new TypeSerializable[A] {
+      val storedA = new A(0)
       def serializeToStream(a: A, s: DataOutputStream) { s.writeInt(a.x) }
-      def deserializeFromStream(s: DataInputStream): A = new A(s.readInt())
+      def deserializeFromStream(s: DataInputStream): A = { storedA.x = s.readInt(); storedA }
     }
     val sObjVector = ImmutableVector.fromArray(objArray, true)
     println(s"Done. Generated ${elemsPerPartition} elements.")
