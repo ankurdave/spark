@@ -46,17 +46,19 @@ private[spark] object ImmutableVector {
     fromArray(array, false)
   }
 
-  def fromArray[A: ClassTag](array: Array[A], serialize: Boolean): ImmutableVector[A] = {
+  def fromArray[A: ClassTag]
+      (array: Array[A], serialize: Boolean)
+      (implicit ser: TypeSerializable[A] = null): ImmutableVector[A] = {
     fromArray(array, 0, array.length, serialize)
   }
 
-  def fromArray[A: ClassTag](
-      array: Array[A], start: Int, end: Int): ImmutableVector[A] = {
+  def fromArray[A: ClassTag](array: Array[A], start: Int, end: Int): ImmutableVector[A] = {
     fromArray(array, start, end, false)
   }
 
-  def fromArray[A: ClassTag](
-      array: Array[A], start: Int, end: Int, serialize: Boolean): ImmutableVector[A] = {
+  def fromArray[A: ClassTag]
+      (array: Array[A], start: Int, end: Int, serialize: Boolean)
+      (implicit ser: TypeSerializable[A] = null): ImmutableVector[A] = {
     new ImmutableVector(end - start, nodeFromArray(array, start, end, serialize))
   }
 
@@ -68,7 +70,7 @@ private[spark] object ImmutableVector {
   /** Returns the root of a 32-ary tree representing the specified interval into the array. */
   private def nodeFromArray[A: ClassTag]
       (array: Array[A], start: Int, end: Int, serialize: Boolean)
-      (implicit ser: TypeSerializable[A] = null): VectorNode[A] = {
+      (implicit ser: TypeSerializable[A]): VectorNode[A] = {
     val length = end - start
     if (length == 0) {
       emptyNode

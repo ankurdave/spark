@@ -17,6 +17,9 @@
 
 package org.apache.spark.util.collection
 
+import java.io.DataInputStream
+import java.io.DataOutputStream
+
 import scala.util.Random
 
 import org.scalatest.FunSuite
@@ -72,7 +75,7 @@ class ImmutableVectorSuite extends FunSuite {
     }
   }
 
-  test("SerializingLeafNode[Int]") {
+  test("serializing primitive") {
     val sizes = for {
       shift <- 0 to 20
       offset <- Array(-1, 0, 1)
@@ -87,7 +90,7 @@ class ImmutableVectorSuite extends FunSuite {
     }
   }
 
-  test("SerializingLeafNode[(Int, Double)]") {
+  test("serializing primitive pair") {
     val sizes = for {
       shift <- 0 to 20
       offset <- Array(-1, 0, 1)
@@ -102,7 +105,7 @@ class ImmutableVectorSuite extends FunSuite {
     }
   }
 
-  test("SerializingLeafNode[Any]") {
+  test("serializing arbitrary object") {
     val sc = new SparkContext("local", "test")
     implicit val useSparkSerializer = TypeSerializable.useSparkSerializer
     val sizes = for {
@@ -117,4 +120,26 @@ class ImmutableVectorSuite extends FunSuite {
         assert(v.updated(i, "foo")(i) == "foo")
       }
     }
-  }}
+  }
+
+  test("serializing custom object") {
+    class A(var x: Int)
+    // Deliberately deserialize it differently to ensure the serializer is being called
+    implicit val aSerializer = new TypeSerializable[A] {
+      def serializeToStream(a: A, s: DataOutputStream) { }
+      def deserializeFromStream(s: DataInputStream): A = new A(2)
+    }
+    val sizes = for {
+      shift <- 0 to 20
+      offset <- Array(-1, 0, 1)
+    } yield (1 << shift) + offset
+    for (size <- sizes) {
+      val v = ImmutableVector.fromArray(Array.fill(size)(new A(1)), true)
+      assert(v.size === size)
+      for (i <- 0 until size) {
+        assert(v(i).x === 2)
+        assert(v.updated(i, new A(3))(i).x === 2)
+      }
+    }
+  }
+}
