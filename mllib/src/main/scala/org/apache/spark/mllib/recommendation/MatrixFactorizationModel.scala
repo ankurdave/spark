@@ -34,7 +34,7 @@ import org.apache.spark.mllib.api.python.PythonMLLibAPI
  * @param productFeatures RDD of tuples where each tuple represents the productId
  *                        and the features computed for this product.
  */
-class MatrixFactorizationModel private[mllib] (
+class MatrixFactorizationModel private[spark] (
     val rank: Int,
     val userFeatures: RDD[(Int, Array[Double])],
     val productFeatures: RDD[(Int, Array[Double])]) extends Serializable {
