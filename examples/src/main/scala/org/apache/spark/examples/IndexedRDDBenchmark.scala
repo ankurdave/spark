@@ -147,7 +147,7 @@ object IndexedRDDBenchmark {
     println("Testing array scan performance...")
     start = System.nanoTime
     for (t <- 1 to trials) {
-      objArray.iterator.foreach(x => {})
+      objArray.iterator.foreach(x => x.x)
     }
     end = System.nanoTime
     println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
@@ -155,7 +155,7 @@ object IndexedRDDBenchmark {
     println("Testing vector scan performance...")
     start = System.nanoTime
     for (t <- 1 to trials) {
-      objVector.iterator.foreach(x => {})
+      objVector.iterator.foreach(x => x.x)
     }
     end = System.nanoTime
     println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
@@ -163,7 +163,7 @@ object IndexedRDDBenchmark {
     println("Testing serialized vector scan performance...")
     start = System.nanoTime
     for (t <- 1 to trials) {
-      sObjVector.iterator.foreach(x => {})
+      sObjVector.iterator.foreach(x => x.x)
     }
     end = System.nanoTime
     println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
@@ -183,7 +183,7 @@ object IndexedRDDBenchmark {
     println("Testing array scan performance...")
     start = System.nanoTime
     for (t <- 1 to trials) {
-      pairArray.iterator.foreach(x => {})
+      pairArray.iterator.foreach(x => x._1)
     }
     end = System.nanoTime
     println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
@@ -191,7 +191,7 @@ object IndexedRDDBenchmark {
     println("Testing vector scan performance...")
     start = System.nanoTime
     for (t <- 1 to trials) {
-      pairVector.iterator.foreach(x => {})
+      pairVector.iterator.foreach(x => x._1)
     }
     end = System.nanoTime
     println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
@@ -199,7 +199,7 @@ object IndexedRDDBenchmark {
     println("Testing serialized vector scan performance...")
     start = System.nanoTime
     for (t <- 1 to trials) {
-      sPairVector.iterator.foreach(x => {})
+      sPairVector.iterator.foreach(x => x._1)
     }
     end = System.nanoTime
     println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per scan.")
