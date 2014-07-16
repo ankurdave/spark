@@ -264,14 +264,14 @@ object IndexedRDDBenchmark {
     end = System.currentTimeMillis
     println(s"Done. ${(end - start) / trials} ms per zip.")
 
-    // println(s"Joining vanilla RDD with modified version ($trials trials)...")
-    // start = System.currentTimeMillis
-    // for (i <- 1 to trials) {
-    //   val joined = vanilla.join(vanilla2)
-    //   joined.foreach(x => {})
-    // }
-    // end = System.currentTimeMillis
-    // println(s"Done. ${(end - start) / trials} ms per join.")
+    println(s"Joining vanilla RDD with modified version ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val joined = vanilla.join(vanilla2)
+      joined.foreach(x => {})
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per join.")
 
     println(s"Joining indexed RDD with modified version ($trials trials)...")
     start = System.currentTimeMillis
@@ -291,12 +291,133 @@ object IndexedRDDBenchmark {
     end = System.currentTimeMillis
     println(s"Done. ${(end - start) / trials} ms per join.")
 
+    println(s"Point lookup on vanilla RDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val k = r.nextInt(numPartitions * elemsPerPartition)
+      val v = vanilla.lookup(k)
+      assert(v == Seq(k))
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per lookup.")
+
+    println(s"Point update followed by lookup on vanilla RDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val k = r.nextInt(numPartitions * elemsPerPartition)
+      val v = vanilla.map(kv => (kv._1, if (kv._1 == k) 0 else kv._2)).lookup(k)
+      assert(v == Seq(0))
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per update+lookup.")
+
+    println(s"Point delete followed by lookup on vanilla RDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val k = r.nextInt(numPartitions * elemsPerPartition)
+      val v = vanilla.filter(kv => kv._1 != k).lookup(k)
+      assert(v.isEmpty)
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per delete+lookup.")
+
+    println(s"Point lookup on IndexedRDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val k = r.nextInt(numPartitions * elemsPerPartition)
+      val v = indexed.get(k)
+      assert(v == Some(k))
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per lookup.")
+
+    println(s"Point update followed by lookup on IndexedRDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val k = r.nextInt(numPartitions * elemsPerPartition)
+      val v = indexed.put(k, 0).get(k)
+      assert(v == Some(0))
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per update+lookup.")
+
+    println(s"Point delete followed by lookup on IndexedRDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val k = r.nextInt(numPartitions * elemsPerPartition)
+      val v = indexed.delete(Array(k)).get(k)
+      assert(v == None)
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per delete+lookup.")
+
     vanilla.unpersist()
     vanilla2.unpersist()
     indexed.unpersist()
     indexed2.unpersist()
 
     println("========== IndexedRDDPartition ==========")
+    def iterPart = (0 until elemsPerPartition).iterator.map(x => (x.toLong, x))
+    val indPart = IndexedRDDPartition((0 until elemsPerPartition).iterator.map(x => (x.toLong, x)))
+    println(s"Point lookup on iterator ($trials trials)...")
+    start = System.nanoTime
+    for (i <- 1 to trials) {
+      val k = r.nextInt(elemsPerPartition)
+      assert(iterLookup(iterPart, k) == Seq(k))
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per lookup.")
+
+    println(s"Point update followed by lookup on vanilla RDD ($trials trials)...")
+    start = System.nanoTime
+    for (i <- 1 to trials) {
+      val k = r.nextInt(elemsPerPartition)
+      val newIter = iterPart.map(kv => (kv._1, if (kv._1 == k) 0 else kv._2))
+      assert(iterLookup(newIter, k) == Seq(0))
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per update+lookup.")
+
+    println(s"Point delete followed by lookup on vanilla RDD ($trials trials)...")
+    start = System.nanoTime
+    for (i <- 1 to trials) {
+      val k = r.nextInt(elemsPerPartition)
+      val newIter = iterPart.filter(kv => kv._1 != k)
+      assert(iterLookup(newIter, k).isEmpty)
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / trials / 1000000} ms per delete+lookup.")
+
+    println(s"Point lookup on IndexedRDDPartition ($microTrials trials)...")
+    start = System.nanoTime
+    for (i <- 1 to microTrials) {
+      val k = r.nextInt(elemsPerPartition)
+      val v = indPart.multiget(Array(k)).get(k)
+      assert(v == Some(k))
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / microTrials / 1000000} ms per lookup.")
+
+    println(s"Point update followed by lookup on IndexedRDD ($microTrials trials)...")
+    start = System.nanoTime
+    for (i <- 1 to microTrials) {
+      val k = r.nextInt(elemsPerPartition)
+      val v = indPart.multiput(Array(k.toLong -> 0), (id, a, b) => b).multiget(Array(k)).get(k)
+      assert(v == Some(0))
+    }
+    end = System.nanoTime
+    println(s"Done. ${(end - start).toDouble / microTrials / 1000000} ms per update+lookup.")
+
+    println(s"Point delete followed by lookup on IndexedRDD ($microTrials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to microTrials) {
+      val k = r.nextInt(elemsPerPartition)
+      val v = indPart.delete(Array(k)).multiget(Array(k)).get(k)
+      assert(v == None)
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start).toDouble / microTrials} ms per delete+lookup.")
+
     println(s"Testing scaling for IndexedRDDPartition.get ($microTrials trials)...")
     println("partition size\tget time (ms)")
     for (n <- 1 to elemsPerPartition by elemsPerPartition / 100) {
@@ -390,5 +511,14 @@ object IndexedRDDBenchmark {
     println("Done.")
 
     sc.stop()
+  }
+
+
+  def iterLookup[V](iter: Iterator[(Long, V)], key: Long): Seq[V] = {
+    val buf = new scala.collection.mutable.ArrayBuffer[V]
+    for ((k, v) <- iter if k == key) {
+      buf += v
+    }
+    buf
   }
 }
