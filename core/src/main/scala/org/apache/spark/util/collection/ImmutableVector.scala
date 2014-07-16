@@ -190,7 +190,8 @@ private class SerializingLeafNode[@specialized(Long, Int) A: ClassTag : TypeSeri
 
   override def apply(index: Int): A = {
     val start = childOffsets(index)
-    implicitly[TypeSerializable[A]].deserialize(childBytes, start)
+    val end = if (index + 1 < childOffsets.length) childOffsets(index + 1) else childBytes.length
+    implicitly[TypeSerializable[A]].deserialize(ByteBuffer.wrap(childBytes, start, end - start))
   }
 
   override def updated(index: Int, elem: A) = {

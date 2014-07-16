@@ -17,8 +17,8 @@
 
 package org.apache.spark.util.collection
 
-import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.nio.ByteBuffer
 
 import scala.util.Random
 
@@ -127,7 +127,7 @@ class ImmutableVectorSuite extends FunSuite {
     // Deliberately deserialize it differently to ensure the serializer is being called
     implicit val aSerializer = new TypeSerializable[A] {
       def serializeToStream(a: A, s: DataOutputStream) { }
-      def deserializeFromStream(s: DataInputStream): A = new A(2)
+      def deserialize(b: ByteBuffer): A = new A(2)
     }
     val sizes = for {
       shift <- 0 to 20

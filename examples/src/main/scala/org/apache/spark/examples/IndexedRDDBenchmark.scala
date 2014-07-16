@@ -17,8 +17,8 @@
 
 package org.apache.spark.examples
 
-import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.nio.ByteBuffer
 
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
@@ -135,7 +135,7 @@ object IndexedRDDBenchmark {
     implicit val aSerializer = new TypeSerializable[A] {
       val storedA = new A(0)
       def serializeToStream(a: A, s: DataOutputStream) { s.writeInt(a.x) }
-      def deserializeFromStream(s: DataInputStream): A = { storedA.x = s.readInt(); storedA }
+      def deserialize(b: ByteBuffer): A = { storedA.x = b.getInt(); storedA }
     }
     val sObjVector = ImmutableVector.fromArray(objArray, true)
     println(s"Done. Generated ${elemsPerPartition} elements.")

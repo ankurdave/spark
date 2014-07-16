@@ -20,9 +20,8 @@ package org.apache.spark.util.collection
 import scala.reflect.ClassTag
 
 import java.io.ByteArrayOutputStream
-import java.io.ByteArrayInputStream
-import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.nio.ByteBuffer
 
 import org.apache.spark.SparkEnv
 
@@ -33,11 +32,7 @@ trait TypeSerializable[A] {
     baos.toByteArray()
   }
   def serializeToStream(a: A, s: DataOutputStream): Unit
-  def deserialize(b: Array[Byte], off: Int): A = {
-    val bais = new DataInputStream(new ByteArrayInputStream(b, off, b.length - off))
-    deserializeFromStream(bais)
-  }
-  def deserializeFromStream(s: DataInputStream): A
+  def deserialize(b: ByteBuffer): A
 }
 
 // TODO: Codegen at compile time? This is sure to be slow because of all the method calls
@@ -47,50 +42,48 @@ object TypeSerializable {
     def serializeToStream(a: A, s: DataOutputStream) {
       SparkEnv.get.serializer.newInstance.serializeStream(s).writeObject(a).close()
     }
-    def deserializeFromStream(s: DataInputStream): A = {
-      val deserStream = SparkEnv.get.serializer.newInstance.deserializeStream(s)
-      val a = deserStream.readObject()
-      deserStream.close()
-      a
+    def deserialize(b: ByteBuffer): A = {
+      SparkEnv.get.serializer.newInstance.deserialize(b)
     }
   }
   implicit object IntSerializable extends TypeSerializable[Int] {
     def serializeToStream(a: Int, s: DataOutputStream) { s.writeInt(a) }
-    def deserializeFromStream(s: DataInputStream): Int = s.readInt()
+    def deserialize(b: ByteBuffer): Int = b.getInt()
   }
 
   implicit object LongSerializable extends TypeSerializable[Long] {
     def serializeToStream(a: Long, s: DataOutputStream) { s.writeLong(a) }
-    def deserializeFromStream(s: DataInputStream): Long = s.readLong()
+    def deserialize(b: ByteBuffer): Long = b.getLong()
   }
+
   implicit object CharSerializable extends TypeSerializable[Char] {
     def serializeToStream(a: Char, s: DataOutputStream) { s.writeChar(a) }
-    def deserializeFromStream(s: DataInputStream): Char = s.readChar()
+    def deserialize(b: ByteBuffer): Char = b.getChar()
   }
 
   implicit object FloatSerializable extends TypeSerializable[Float] {
     def serializeToStream(a: Float, s: DataOutputStream) { s.writeFloat(a) }
-    def deserializeFromStream(s: DataInputStream): Float = s.readFloat()
+    def deserialize(b: ByteBuffer): Float = b.getFloat()
   }
 
   implicit object DoubleSerializable extends TypeSerializable[Double] {
     def serializeToStream(a: Double, s: DataOutputStream) { s.writeDouble(a) }
-    def deserializeFromStream(s: DataInputStream): Double = s.readDouble()
+    def deserialize(b: ByteBuffer): Double = b.getDouble()
   }
 
   implicit object ShortSerializable extends TypeSerializable[Short] {
     def serializeToStream(a: Short, s: DataOutputStream) { s.writeShort(a) }
-    def deserializeFromStream(s: DataInputStream): Short = s.readShort()
+    def deserialize(b: ByteBuffer): Short = b.getShort()
   }
 
   implicit object BooleanSerializable extends TypeSerializable[Boolean] {
     def serializeToStream(a: Boolean, s: DataOutputStream) { s.writeBoolean(a) }
-    def deserializeFromStream(s: DataInputStream): Boolean = s.readBoolean()
+    def deserialize(b: ByteBuffer): Boolean = b.get() != 0
   }
 
   implicit object ByteSerializable extends TypeSerializable[Byte] {
     def serializeToStream(a: Byte, s: DataOutputStream) { s.writeByte(a) }
-    def deserializeFromStream(s: DataInputStream): Byte = s.readByte()
+    def deserialize(b: ByteBuffer): Byte = b.get()
   }
 
   implicit def tuple2Serializable[A: TypeSerializable, B: TypeSerializable] = new TypeSerializable[(A, B)] {
@@ -98,9 +91,9 @@ object TypeSerializable {
       implicitly[TypeSerializable[A]].serializeToStream(pair._1, s)
       implicitly[TypeSerializable[B]].serializeToStream(pair._2, s)
     }
-    def deserializeFromStream(s: DataInputStream): (A, B) = {
-      val a = implicitly[TypeSerializable[A]].deserializeFromStream(s)
-      val b = implicitly[TypeSerializable[B]].deserializeFromStream(s)
+    def deserialize(bb: ByteBuffer): (A, B) = {
+      val a = implicitly[TypeSerializable[A]].deserialize(bb)
+      val b = implicitly[TypeSerializable[B]].deserialize(bb)
       (a, b)
     }
   }
