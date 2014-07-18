@@ -21,9 +21,10 @@ package org.apache.spark.util.collection
  * A simple, fixed-size bit set implementation. This implementation is fast because it avoids
  * safety/bound checking.
  */
-class BitSet(numBits: Int) extends Serializable {
+class BitSet private (numBits: Int, private val words: Array[Long]) extends Serializable {
 
-  private val words = new Array[Long](bit2words(numBits))
+  def this(numBits: Int) = this(numBits, new Array[Long](BitSet.bit2words(numBits)))
+
   private val numWords = words.length
 
   /**
@@ -217,10 +218,14 @@ class BitSet(numBits: Int) extends Serializable {
     -1
   }
 
+  def copy(): BitSet = new BitSet(numBits, words.clone())
+
   private[spark] def toImmutableBitSet: ImmutableBitSet = {
     new ImmutableBitSet(numBits, ImmutableVector.fromArray(words))
   }
+}
 
+private object BitSet {
   /** Return the number of longs it would take to hold numBits. */
   private def bit2words(numBits: Int) = ((numBits - 1) >> 6) + 1
 }

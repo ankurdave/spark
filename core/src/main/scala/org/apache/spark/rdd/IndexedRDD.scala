@@ -17,13 +17,11 @@
 
 package org.apache.spark.rdd
 
-import scala.language.higherKinds
 import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark._
 import org.apache.spark.SparkContext._
 import org.apache.spark.annotation.Experimental
-import org.apache.spark.storage.StorageLevel
 
 import IndexedRDD.Id
 
@@ -34,23 +32,25 @@ import IndexedRDD.Id
  * efficiently. All operations except [[reindex]] preserve the index. To construct an `IndexedRDD`,
  * use the [[org.apache.spark.rdd.IndexedRDD$ IndexedRDD object]].
  *
+ * If efficient point updates are not required, use `NonUpdatableIndexedRDD` for better performance
+ * on other operations.
+ *
  * @tparam V the value associated with each entry in the set.
  */
 @Experimental
 class IndexedRDD[@specialized(Long, Int, Double) V: ClassTag]
-    (val partitionsRDD: RDD[IndexedRDDPartition[V]])
+    (override val partitionsRDD: RDD[UpdatableIndexedRDDPartition[V]])
   extends RDD[(Id, V)](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD)))
-  with IndexedRDDLike[V, IndexedRDDPartition, IndexedRDD] {
+  with IndexedRDDLike[V, UpdatableIndexedRDDPartition, IndexedRDD] {
 
-  override protected def vTag: ClassTag[V] = classTag[V]
+  override protected def vTag = classTag[V]
 
-  override protected def pTag[V2]: ClassTag[IndexedRDDPartition[V2]] =
-    classTag[IndexedRDDPartition[V2]]
+  override protected def pTag[V2] = classTag[UpdatableIndexedRDDPartition[V2]]
 
-  override protected def self: IndexedRDD[V] = this
+  override protected def self = this
 
   def withPartitionsRDD[V2: ClassTag](
-      partitionsRDD: RDD[IndexedRDDPartition[V2]]): IndexedRDD[V2] = {
+      partitionsRDD: RDD[UpdatableIndexedRDDPartition[V2]]): IndexedRDD[V2] = {
     new IndexedRDD(partitionsRDD)
   }
 }
@@ -77,7 +77,7 @@ object IndexedRDD {
       elems: RDD[(Id, V)], partitioner: Partitioner, mergeValues: (V, V) => V): IndexedRDD[V] = {
     val partitioned: RDD[(Id, V)] = elems.partitionBy(partitioner)
     val partitions = partitioned.mapPartitions(
-      iter => Iterator(IndexedRDDPartition(iter, mergeValues)),
+      iter => Iterator(UpdatableIndexedRDDPartition(iter, mergeValues)),
       preservesPartitioning = true)
     new IndexedRDD(partitions)
   }
