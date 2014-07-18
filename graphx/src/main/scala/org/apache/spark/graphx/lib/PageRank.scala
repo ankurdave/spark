@@ -21,6 +21,7 @@ import scala.reflect.ClassTag
 
 import org.apache.spark.Logging
 import org.apache.spark.graphx._
+import org.apache.spark.graphx.Pregel._
 
 /**
  * PageRank algorithm implementation. There are two implementations of PageRank implemented.
@@ -79,6 +80,7 @@ object PageRank extends Logging {
   def run[VD: ClassTag, ED: ClassTag](
       graph: Graph[VD, ED], numIter: Int, resetProb: Double = 0.15): Graph[Double, Double] =
   {
+
     // Initialize the pagerankGraph with each edge attribute having
     // weight 1/outDegree and each vertex with attribute 1.0.
     val pagerankGraph: Graph[Double, Double] = graph
@@ -87,22 +89,27 @@ object PageRank extends Logging {
       // Set the weight on the edges based on the degree
       .mapTriplets( e => 1.0 / e.srcAttr )
       // Set the vertex attributes to the initial pagerank values
-      .mapVertices( (id, attr) => 1.0 )
+      .mapVertices( (id, attr) => resetProb )
       .cache()
 
     // Define the three functions needed to implement PageRank in the GraphX
     // version of Pregel
-    def vertexProgram(id: VertexId, attr: Double, msgSum: Double): Double =
-      resetProb + (1.0 - resetProb) * msgSum
-    def sendMessage(edge: EdgeTriplet[Double, Double]) =
-      Iterator((edge.dstId, edge.srcAttr * edge.attr))
+    def vertexProgram(iter: Int, id: VertexId, oldV: PregelVertex[Double],
+                      msgSum: Option[Double]) = {
+      PregelVertex(resetProb + (1.0 - resetProb) * msgSum.getOrElse(0.0))
+    }
+
+    def sendMessage(iter: Int, edge: EdgeTriplet[PregelVertex[Double], Double]) = {
+      Iterator((edge.dstId, edge.srcAttr.attr * edge.attr))
+    }
+
     def messageCombiner(a: Double, b: Double): Double = a + b
-    // The initial message received by all vertices in PageRank
-    val initialMessage = 0.0
 
     // Execute pregel for a fixed number of iterations.
-    Pregel(pagerankGraph, initialMessage, numIter, activeDirection = EdgeDirection.Out)(
-      vertexProgram, sendMessage, messageCombiner)
+    val prGraph = Pregel.run(pagerankGraph, numIter, activeDirection = EdgeDirection.Out)(
+      vertexProgram, sendMessage, messageCombiner).cache()
+    val normalizer: Double = prGraph.vertices.map(x => x._2).reduce(_ + _)
+    prGraph.mapVertices((id, pr) => pr / normalizer)
   }
 
   /**
@@ -131,34 +138,39 @@ object PageRank extends Logging {
       }
       // Set the weight on the edges based on the degree
       .mapTriplets( e => 1.0 / e.srcAttr )
-      // Set the vertex attributes to (initalPR, delta = 0)
-      .mapVertices( (id, attr) => (0.0, 0.0) )
+      // Set the vertex attributes to (currentPr, deltaToSend)
+      .mapVertices( (id, attr) => (resetProb, (1.0 - resetProb) * resetProb) )
       .cache()
 
     // Define the three functions needed to implement PageRank in the GraphX
     // version of Pregel
-    def vertexProgram(id: VertexId, attr: (Double, Double), msgSum: Double): (Double, Double) = {
-      val (oldPR, lastDelta) = attr
-      val newPR = oldPR + (1.0 - resetProb) * msgSum
-      (newPR, newPR - oldPR)
+    def vertexProgram(iter: Int, id: VertexId, vertex: PregelVertex[(Double, Double)],
+                      msgSum: Option[Double]) = {
+      var (oldPR, pendingDelta) = vertex.attr
+      val newPR = oldPR + msgSum.getOrElse(0.0)
+      // if we were active then we sent the pending delta on the last iteration
+      if (vertex.isActive) {
+        pendingDelta = 0.0
+      }
+      pendingDelta += (1.0 - resetProb) * msgSum.getOrElse(0.0)
+      val isActive = math.abs(pendingDelta) >= tol
+      PregelVertex((newPR, pendingDelta), isActive)
     }
 
-    def sendMessage(edge: EdgeTriplet[(Double, Double), Double]) = {
-      if (edge.srcAttr._2 > tol) {
-        Iterator((edge.dstId, edge.srcAttr._2 * edge.attr))
-      } else {
-        Iterator.empty
-      }
+    def sendMessage(iter: Int, edge: EdgeTriplet[PregelVertex[(Double, Double)], Double]) = {
+      val PregelVertex((srcPr, srcDelta), srcIsActive) = edge.srcAttr
+      assert(srcIsActive)
+      Iterator((edge.dstId, srcDelta * edge.attr))
     }
 
     def messageCombiner(a: Double, b: Double): Double = a + b
 
-    // The initial message received by all vertices in PageRank
-    val initialMessage = resetProb / (1.0 - resetProb)
-
     // Execute a dynamic version of Pregel.
-    Pregel(pagerankGraph, initialMessage, activeDirection = EdgeDirection.Out)(
+    val prGraph = Pregel.run(pagerankGraph, activeDirection = EdgeDirection.Out)(
       vertexProgram, sendMessage, messageCombiner)
       .mapVertices((vid, attr) => attr._1)
+      .cache()
+    val normalizer: Double = prGraph.vertices.map(x => x._2).reduce(_ + _)
+    prGraph.mapVertices((id, pr) => pr / normalizer)
   } // end of deltaPageRank
 }
