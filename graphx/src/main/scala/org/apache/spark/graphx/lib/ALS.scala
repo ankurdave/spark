@@ -33,22 +33,20 @@ import org.apache.spark.graphx._
 object ALS {
   /** Interface that mimics org.apache.spark.mllib.recommendation.ALS.train. */
   def train(ratings: RDD[Rating], rank: Int, iterations: Int, lambda: Double = 0.01): MatrixFactorizationModel = {
-    // Convert ratings to weighted edges between users and products. User IDs and product IDs will
-    // occupy different parts of the VertexId space, which is guaranteed by the productMask.
-    val productMask = 1L << 63
-    val unsignedIntMask = 0xFFFFFFFFL
+    // Reversibly convert ratings to weighted edges between users and products. User IDs and product
+    // IDs will occupy different parts of the VertexId space.
     val edges = ratings.map(r => Edge(
-      r.user.toLong & unsignedIntMask,
-      (r.product.toLong & unsignedIntMask) | productMask,
+      compose(0, r.user),
+      compose(1, r.product),
       r.rating))
     val graph = Graph.fromEdges(edges, 1)
     val model = run(graph, rank, lambda, iterations).vertices.cache()
     val userFeatures = model
-      .filter((kv: (VertexId, Array[Double])) => (kv._1 & productMask) == 0)
-      .map(kv => (kv._1.toInt, kv._2))
+      .filter((kv: (VertexId, Array[Double])) => high(kv._1) == 0)
+      .map(kv => (low(kv._1), kv._2))
     val productFeatures = model
-      .filter((kv: (VertexId, Array[Double])) => (kv._1 & productMask) != 0)
-      .map(kv => ((kv._1 & unsignedIntMask).toInt, kv._2))
+      .filter((kv: (VertexId, Array[Double])) => high(kv._1) == 1)
+      .map(kv => (low(kv._1), kv._2))
     new MatrixFactorizationModel(rank, userFeatures, productFeatures)
   }
 
@@ -57,23 +55,17 @@ object ALS {
       latentK: Int, lambda: Double, numIter: Int): Graph[Array[Double], Double] = {
     val alsGraph = graph.mapVertices((id, attr) =>
       Array.fill(latentK){ scala.util.Random.nextDouble() }).cache()
-    // val maxUser = graph.edges.map(_.srcId).max
 
-    def sendMsg(edge: EdgeTriplet[Array[Double], Double])
+    def sendMsg(iteration: Int, edge: EdgeTriplet[PregelVertex[Array[Double]], Double])
       : Iterator[(VertexId, (Array[Double], Array[Double]))] = {
+      val sendToDst = iteration % 2 == 0
       val y = edge.attr
-      // Compute message for dst
-      val X = edge.srcAttr
-      val Xy = X.map(_ * y)
-      val XtX = (for (i <- 0 until latentK; j <- i until latentK) yield X(i) * X(j)).toArray
-      val dstMsg = (Xy, XtX)
-      // Compute message for src
-      val Z = edge.srcAttr
-      val Zy = Z.map(_ * y)
-      val ZtZ = (for (i <- 0 until latentK; j <- i until latentK) yield Z(i) * Z(j)).toArray
-      val srcMsg = (Zy, ZtZ)
-      // Send messages
-      Iterator((edge.srcId, srcMsg), (edge.dstId, dstMsg))
+      val theX = if (sendToDst) edge.srcAttr.attr else edge.dstAttr.attr
+      val theXy = theX.map(_ * y)
+      val theXtX = (for (i <- 0 until latentK; j <- i until latentK) yield theX(i) * theX(j)).toArray
+      val msg = (theXy, theXtX)
+      val recipient = if (sendToDst) edge.dstId else edge.srcId
+      Iterator((recipient, msg))
     }
     def mergeMsg(
         a: (Array[Double], Array[Double]),
@@ -86,24 +78,31 @@ object ALS {
       a
     }
     def vprog(
-        id: VertexId, attr: Array[Double], msg: (Array[Double], Array[Double])): Array[Double] = {
-      val XyArray = msg._1
-      val XtXArray = msg._2
-      if (XyArray.isEmpty) {
-        attr // no neighbors
-      } else {
-        val XtX = DenseMatrix.tabulate(latentK, latentK) { (i, j) =>
-          (if (i < j) XtXArray(i + (j+1)*j/2) else XtXArray(i + (j+1)*j/2)) +
-          (if (i == j) lambda else 1.0F) // regularization
-        }
-        val Xy = DenseMatrix.create(latentK, 1, XyArray)
-        val w = XtX \ Xy
-        w.data
+        iteration: Int,
+        id: VertexId,
+        vertex: PregelVertex[Array[Double]],
+        msg: Option[(Array[Double], Array[Double])])
+      : PregelVertex[Array[Double]] = {
+      msg match {
+        case Some((theXyArray, theXtXArray)) =>
+          val theXtX = DenseMatrix.tabulate(latentK, latentK) { (i, j) =>
+            (if (i < j) theXtXArray(j + (i+1)*i/2) else theXtXArray(i + (j+1)*j/2)) +
+            (if (i == j) lambda else 1.0F) // regularization
+          }
+          val theXy = DenseMatrix.create(latentK, 1, theXyArray)
+          val w = theXtX \ theXy
+          PregelVertex(w.data)
+        case None =>
+          vertex
       }
     }
 
-    val emptyMsg = (Array.empty[Double], Array.empty[Double])
-
-    Pregel(alsGraph, emptyMsg, numIter)(vprog, sendMsg, mergeMsg)
+    Pregel.run(alsGraph, numIter)(vprog, sendMsg, mergeMsg)
   }
+
+  // From http://stackoverflow.com/questions/5147738/supressing-sign-extension-when-upcasting-or-shifting-in-java
+  private def compose(hi: Int, lo: Int): Long = (hi.toLong << 32) + unsigned(lo)
+  private def unsigned(x: Int): Long = x & 0xFFFFFFFFL
+  private def high(x: Long): Int = (x >> 32).toInt
+  private def low(x: Long): Int = x.toInt
 }
