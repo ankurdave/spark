@@ -238,6 +238,30 @@ object IndexedRDDBenchmark {
     end = System.currentTimeMillis
     println(s"Done. ${(end - start) / trials} ms per scan.")
 
+    println("Constructing small vanilla RDD...")
+    val smallVanilla = sc.parallelize(0 until numPartitions, numPartitions)
+      .map(p => p * elemsPerPartition).map(x => (x.toLong, x)).cache()
+    smallVanilla.foreach(x => {})
+    println(s"Done.")
+
+    println(s"Joining vanilla RDD with small vanilla RDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val joined = vanilla.join(smallVanilla)
+      joined.foreach(x => {})
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per join.")
+
+    println(s"Joining indexed RDD with small vanilla RDD ($trials trials)...")
+    start = System.currentTimeMillis
+    for (i <- 1 to trials) {
+      val joined = indexed.innerJoin(smallVanilla) { (id, a, b) => a + b }
+      joined.foreach(x => {})
+    }
+    end = System.currentTimeMillis
+    println(s"Done. ${(end - start) / trials} ms per join.")
+
     println("Constructing modified version of vanilla RDD...")
     val vanilla2 = vanilla.mapValues(_ * 2).cache()
     vanilla2.foreach(x => {})
@@ -264,14 +288,14 @@ object IndexedRDDBenchmark {
     end = System.currentTimeMillis
     println(s"Done. ${(end - start) / trials} ms per zip.")
 
-    println(s"Joining vanilla RDD with modified version ($trials trials)...")
-    start = System.currentTimeMillis
-    for (i <- 1 to trials) {
-      val joined = vanilla.join(vanilla2)
-      joined.foreach(x => {})
-    }
-    end = System.currentTimeMillis
-    println(s"Done. ${(end - start) / trials} ms per join.")
+    // println(s"Joining vanilla RDD with modified version ($trials trials)...")
+    // start = System.currentTimeMillis
+    // for (i <- 1 to trials) {
+    //   val joined = vanilla.join(vanilla2)
+    //   joined.foreach(x => {})
+    // }
+    // end = System.currentTimeMillis
+    // println(s"Done. ${(end - start) / trials} ms per join.")
 
     println(s"Joining indexed RDD with modified version ($trials trials)...")
     start = System.currentTimeMillis
