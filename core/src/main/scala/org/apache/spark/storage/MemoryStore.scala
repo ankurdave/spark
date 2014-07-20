@@ -23,6 +23,7 @@ import java.util.LinkedHashMap
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.serializer.Serializer
 import org.apache.spark.util.{SizeEstimator, Utils}
 import org.apache.spark.util.collection.SizeTrackingVector
 
@@ -157,7 +158,7 @@ private[spark] class MemoryStore(blockManager: BlockManager, maxMemory: Long)
     }
   }
 
-  override def getValues(blockId: BlockId): Option[Iterator[Any]] = {
+  private def doGetValues(blockId: BlockId, serializerOpt: Option[Serializer] = None): Option[Iterator[Any]] = {
     val entry = entries.synchronized {
       entries.get(blockId)
     }
@@ -167,8 +168,19 @@ private[spark] class MemoryStore(blockManager: BlockManager, maxMemory: Long)
       Some(entry.value.asInstanceOf[Array[Any]].iterator)
     } else {
       val buffer = entry.value.asInstanceOf[ByteBuffer].duplicate() // Doesn't actually copy data
-      Some(blockManager.dataDeserialize(blockId, buffer))
+      serializerOpt match {
+        case Some(serializer) => Some(blockManager.dataDeserialize(blockId, buffer, serializer))
+        case None => Some(blockManager.dataDeserialize(blockId, buffer))
+      }
     }
+  }
+
+  override def getValues(blockId: BlockId): Option[Iterator[Any]] = {
+    doGetValues(blockId, None)
+  }
+
+  override def getValues(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
+    doGetValues(blockId, Some(serializer))
   }
 
   override def remove(blockId: BlockId): Boolean = {

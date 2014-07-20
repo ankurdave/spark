@@ -17,7 +17,8 @@
 
 package org.apache.spark.storage
 
-import java.io.{BufferedOutputStream, FileOutputStream, File, OutputStream}
+import java.io.{BufferedOutputStream, FileOutputStream, File, OutputStream, ByteArrayOutputStream}
+import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
 import org.apache.spark.Logging
@@ -189,5 +190,82 @@ private[spark] class DiskBlockObjectWriter(
   // Only valid if called after commit()
   override def bytesWritten: Long = {
     lastValidPosition - initialPosition
+  }
+}
+
+private[spark] class MemoryBlockObjectWriter(
+    blockManager: BlockManager,
+    blockId: BlockId,
+    serializer: Serializer,
+    compressStream: OutputStream => OutputStream)
+  extends BlockObjectWriter(blockId)
+  with Logging {
+
+  private var s: SerializationStream = null // the top-level stream that we write to
+  private var bs: OutputStream = null // need access to the next stream down to flush it for Kryo
+  private var baos: ByteArrayOutputStream = null // the bottom-level stream - need access to it get the underlying byte array
+  private var initialized = false
+  private var _bytesWritten: Long = 0
+
+  override def open(): BlockObjectWriter = {
+    baos = new ByteArrayOutputStream()
+    bs = compressStream(baos)
+    s = serializer.newInstance().serializeStream(bs)
+    initialized = true
+    this
+  }
+
+  override def close() {
+    if (initialized) {
+      s.close()
+      baos = null
+      bs = null
+      s = null
+      initialized = false
+    }
+  }
+
+  override def isOpen: Boolean = s != null
+
+  // Don't call this more than once!
+  override def commit(): Long = {
+    if (initialized) {
+      // NOTE: Because Kryo doesn't flush the underlying stream we explicitly flush both the
+      //       serializer stream and the lower level stream.
+      s.flush()
+      bs.flush()
+      val bytes = baos.toByteArray
+      blockManager.putBytes(blockId, ByteBuffer.wrap(bytes), StorageLevel.MEMORY_AND_DISK_SER)
+      _bytesWritten += bytes.length
+      bytes.length
+    } else {
+      0
+    }
+  }
+
+  override def revertPartialWrites() {
+    if (initialized) {
+      s.flush()
+      baos.reset()
+      _bytesWritten = 0
+    }
+  }
+
+  override def write(value: Any) {
+    if (!initialized) {
+      open()
+    }
+    s.writeObject(value)
+  }
+
+  override def fileSegment(): FileSegment = {
+    new FileSegment(null, 0, _bytesWritten)
+  }
+
+  override def timeWriting() = 0
+
+  // Only valid if called after commit()
+  override def bytesWritten: Long = {
+    _bytesWritten
   }
 }

@@ -23,6 +23,7 @@ import java.nio.ByteBuffer
 import tachyon.client.{ReadType, WriteType}
 
 import org.apache.spark.Logging
+import org.apache.spark.serializer.Serializer
 import org.apache.spark.util.Utils
 
 /**
@@ -97,6 +98,10 @@ private[spark] class TachyonStore(
 
   override def getValues(blockId: BlockId): Option[Iterator[Any]] = {
     getBytes(blockId).map(buffer => blockManager.dataDeserialize(blockId, buffer))
+  }
+
+  override def getValues(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
+    getBytes(blockId).map(buffer => blockManager.dataDeserialize(blockId, buffer, serializer))
   }
 
   override def getBytes(blockId: BlockId): Option[ByteBuffer] = {

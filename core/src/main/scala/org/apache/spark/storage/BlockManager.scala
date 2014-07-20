@@ -331,22 +331,11 @@ private[spark] class BlockManager(
   }
 
   /**
-   * A short-circuited method to get blocks directly from disk. This is used for getting
-   * shuffle blocks. It is safe to do so without a lock on block info since disk store
-   * never deletes (recent) items.
-   */
-  def getLocalFromDisk(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
-    diskStore.getValues(blockId, serializer).orElse {
-      throw new BlockException(blockId, s"Block $blockId not found on disk, though it should be")
-    }
-  }
-
-  /**
    * Get block from local block manager.
    */
-  def getLocal(blockId: BlockId): Option[BlockResult] = {
+  def getLocal(blockId: BlockId, serializer: Serializer = defaultSerializer): Option[BlockResult] = {
     logDebug(s"Getting local block $blockId")
-    doGetLocal(blockId, asBlockResult = true).asInstanceOf[Option[BlockResult]]
+    doGetLocal(blockId, asBlockResult = true, serializer = serializer).asInstanceOf[Option[BlockResult]]
   }
 
   /**
@@ -354,22 +343,10 @@ private[spark] class BlockManager(
    */
   def getLocalBytes(blockId: BlockId): Option[ByteBuffer] = {
     logDebug(s"Getting local block $blockId as bytes")
-    // As an optimization for map output fetches, if the block is for a shuffle, return it
-    // without acquiring a lock; the disk store never deletes (recent) items so this should work
-    if (blockId.isShuffle) {
-      diskStore.getBytes(blockId) match {
-        case Some(bytes) =>
-          Some(bytes)
-        case None =>
-          throw new BlockException(
-            blockId, s"Block $blockId not found on disk, though it should be")
-      }
-    } else {
-      doGetLocal(blockId, asBlockResult = false).asInstanceOf[Option[ByteBuffer]]
-    }
+    doGetLocal(blockId, asBlockResult = false).asInstanceOf[Option[ByteBuffer]]
   }
 
-  private def doGetLocal(blockId: BlockId, asBlockResult: Boolean): Option[Any] = {
+  private def doGetLocal(blockId: BlockId, asBlockResult: Boolean, serializer: Serializer = defaultSerializer): Option[Any] = {
     val info = blockInfo.get(blockId).orNull
     if (info != null) {
       info.synchronized {
@@ -397,7 +374,7 @@ private[spark] class BlockManager(
         if (level.useMemory) {
           logDebug(s"Getting block $blockId from memory")
           val result = if (asBlockResult) {
-            memoryStore.getValues(blockId).map(new BlockResult(_, DataReadMethod.Memory, info.size))
+            memoryStore.getValues(blockId, serializer).map(new BlockResult(_, DataReadMethod.Memory, info.size))
           } else {
             memoryStore.getBytes(blockId)
           }
@@ -419,7 +396,7 @@ private[spark] class BlockManager(
                   return Some(bytes)
                 } else {
                   return Some(new BlockResult(
-                    dataDeserialize(blockId, bytes), DataReadMethod.Memory, info.size))
+                    dataDeserialize(blockId, bytes, serializer), DataReadMethod.Memory, info.size))
                 }
               case None =>
                 logDebug(s"Block $blockId not found in tachyon")
@@ -441,7 +418,7 @@ private[spark] class BlockManager(
           if (!level.useMemory) {
             // If the block shouldn't be stored in memory, we can just return it
             if (asBlockResult) {
-              return Some(new BlockResult(dataDeserialize(blockId, bytes), DataReadMethod.Disk,
+              return Some(new BlockResult(dataDeserialize(blockId, bytes, serializer), DataReadMethod.Disk,
                 info.size))
             } else {
               return Some(bytes)
@@ -460,7 +437,7 @@ private[spark] class BlockManager(
             if (!asBlockResult) {
               return Some(bytes)
             } else {
-              val values = dataDeserialize(blockId, bytes)
+              val values = dataDeserialize(blockId, bytes, serializer)
               if (level.deserialized) {
                 // Cache the values before returning them
                 val putResult = memoryStore.putIterator(
@@ -585,6 +562,13 @@ private[spark] class BlockManager(
     val compressStream: OutputStream => OutputStream = wrapForCompression(blockId, _)
     val syncWrites = conf.getBoolean("spark.shuffle.sync", false)
     new DiskBlockObjectWriter(blockId, file, serializer, bufferSize, compressStream, syncWrites)
+  }
+
+  def getMemoryWriter(
+      blockId: BlockId,
+      serializer: Serializer): BlockObjectWriter = {
+    val compressStream: OutputStream => OutputStream = wrapForCompression(blockId, _)
+    new MemoryBlockObjectWriter(this, blockId, serializer, compressStream)
   }
 
   /**

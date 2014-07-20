@@ -39,8 +39,8 @@ private[spark] trait ShuffleWriterGroup {
 }
 
 /**
- * Manages assigning disk-based block writers to shuffle tasks. Each shuffle task gets one file
- * per reducer (this set of files is called a ShuffleFileGroup).
+ * Manages assigning disk- or memory-based block writers to shuffle tasks. Each shuffle task gets
+ * one file per reducer (this set of files is called a ShuffleFileGroup).
  *
  * As an optimization to reduce the number of physical shuffle files produced, multiple shuffle
  * blocks are aggregated into the same file. There is one "combined shuffle file" per reducer
@@ -72,6 +72,8 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
   // Are we using sort-based shuffle?
   val sortBasedShuffle =
     conf.get("spark.shuffle.manager", "") == classOf[SortShuffleManager].getName
+
+  val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", true)
 
   private val bufferSize = conf.getInt("spark.shuffle.file.buffer.kb", 100) * 1024
 
@@ -121,22 +123,30 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
         fileGroup = getUnusedFileGroup()
         Array.tabulate[BlockObjectWriter](numBuckets) { bucketId =>
           val blockId = ShuffleBlockId(shuffleId, mapId, bucketId)
-          blockManager.getDiskWriter(blockId, fileGroup(bucketId), serializer, bufferSize)
+          if (memoryShuffle) {
+            blockManager.getMemoryWriter(blockId, serializer)
+          } else {
+            blockManager.getDiskWriter(blockId, fileGroup(bucketId), serializer, bufferSize)
+          }
         }
       } else {
         Array.tabulate[BlockObjectWriter](numBuckets) { bucketId =>
           val blockId = ShuffleBlockId(shuffleId, mapId, bucketId)
-          val blockFile = blockManager.diskBlockManager.getFile(blockId)
-          // Because of previous failures, the shuffle file may already exist on this machine.
-          // If so, remove it.
-          if (blockFile.exists) {
-            if (blockFile.delete()) {
-              logInfo(s"Removed existing shuffle file $blockFile")
-            } else {
-              logWarning(s"Failed to remove existing shuffle file $blockFile")
+          if (memoryShuffle) {
+            blockManager.getMemoryWriter(blockId, serializer)
+          } else {
+            val blockFile = blockManager.diskBlockManager.getFile(blockId)
+            // Because of previous failures, the shuffle file may already exist on this machine.
+            // If so, remove it.
+            if (blockFile.exists) {
+              if (blockFile.delete()) {
+                logInfo(s"Removed existing shuffle file $blockFile")
+              } else {
+                logWarning(s"Failed to remove existing shuffle file $blockFile")
+              }
             }
+            blockManager.getDiskWriter(blockId, blockFile, serializer, bufferSize)
           }
-          blockManager.getDiskWriter(blockId, blockFile, serializer, bufferSize)
         }
       }
 
@@ -216,7 +226,7 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
         } else {
           for (mapId <- state.completedMapTasks; reduceId <- 0 until state.numBuckets) {
             val blockId = new ShuffleBlockId(shuffleId, mapId, reduceId)
-            blockManager.diskBlockManager.getFile(blockId).delete()
+            blockManager.diskBlockManager.getFile(blockId).delete() // TODO: handle in-memory case
           }
         }
         logInfo("Deleted all files for shuffle " + shuffleId)

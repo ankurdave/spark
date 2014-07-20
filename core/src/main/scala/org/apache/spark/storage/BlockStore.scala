@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.Logging
+import org.apache.spark.serializer.Serializer
 
 /**
  * Abstract class to store blocks.
@@ -57,6 +58,12 @@ private[spark] abstract class BlockStore(val blockManager: BlockManager) extends
   def getBytes(blockId: BlockId): Option[ByteBuffer]
 
   def getValues(blockId: BlockId): Option[Iterator[Any]]
+
+  /**
+   * A version of getValues that allows a custom serializer. This is used as part of the
+   * shuffle short-circuit code.
+   */
+  def getValues(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]]
 
   /**
    * Remove a block, if it exists.
