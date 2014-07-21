@@ -72,21 +72,17 @@ object ALSBenchmark {
     }
 
     // Generate the ratings
-    val usersPerPartition = numUsers / numEPart
-    val productsPerPartition = numProducts / numEPart
     val ratingsPerPartition = numRatings / numEPart
     val ratings = sc.parallelize(0 until numEPart, numEPart).flatMap { i =>
-      val minUser = i * usersPerPartition
-      val minProduct = i * productsPerPartition
       val r = new util.Random(i)
       Iterator.fill(ratingsPerPartition) {
-        Rating(
-          minUser + r.nextInt(usersPerPartition),
-          minProduct + r.nextInt(productsPerPartition),
-          r.nextDouble())
+        Rating(r.nextInt(numUsers), r.nextInt(numProducts), r.nextDouble())
       }
     }.cache()
-    println(s"Created ${ratings.count} ratings.")
+    val sampleRatings = ratings.take(2).toList
+    val testUser = sampleRatings(0).user
+    val testProduct = sampleRatings(1).product
+    println(s"Created ${ratings.count} ratings: $sampleRatings")
 
     var startTime = 0L
 
@@ -94,14 +90,14 @@ object ALSBenchmark {
     startTime = System.currentTimeMillis
     val mllibModel =
       org.apache.spark.mllib.recommendation.ALS.train(ratings, rank, niter)
-    println(s"MLlib predicted rating for (0, 0): ${mllibModel.predict(0, 0)}")
+    println(s"MLlib predicted rating for ($testUser, $testProduct): ${mllibModel.predict(testUser, testProduct)}")
     println(s"MLlib ran in ${System.currentTimeMillis - startTime} ms")
 
     // Run GraphX ALS
     startTime = System.currentTimeMillis
     val graphxModel =
       org.apache.spark.graphx.lib.ALS.train(ratings, rank, niter)
-    println(s"GraphX predicted rating for (0, 0): ${graphxModel.predict(0, 0)}")
+    println(s"GraphX predicted rating for ($testUser, $testProduct): ${graphxModel.predict(testUser, testProduct)}")
     println(s"GraphX ran in ${System.currentTimeMillis - startTime} ms")
 
     sc.stop()
