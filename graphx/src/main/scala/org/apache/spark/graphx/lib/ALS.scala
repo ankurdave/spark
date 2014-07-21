@@ -19,7 +19,6 @@ package org.apache.spark.graphx.lib
 
 import scala.reflect.ClassTag
 import scala.util.Random
-import scala.util.hashing.byteswap32
 
 import breeze.linalg._
 import org.jblas.DoubleMatrix
@@ -67,7 +66,7 @@ object ALS {
       val y = edge.attr
       val theX = if (sendToDst) edge.srcAttr.attr else edge.dstAttr.attr
       val theXy = theX.map(_ * y)
-      val theXtX = (for (i <- 0 until latentK; j <- 0 until latentK) yield theX(i) * theX(j)).toArray
+      val theXtX = (for (i <- 0 until latentK; j <- i until latentK) yield theX(i) * theX(j)).toArray
       val msg = (theXy, theXtX)
       val recipient = if (sendToDst) edge.dstId else edge.srcId
       Iterator((recipient, msg))
@@ -91,7 +90,7 @@ object ALS {
       msg match {
         case Some((theXyArray, theXtXArray)) =>
           val reg = DenseMatrix.eye[Double](latentK) * lambda
-          val theXtX = DenseMatrix.create(latentK, latentK, theXtXArray) + reg
+          val theXtX = matrixFromTriangular(latentK, theXtXArray) + reg
           val theXy = DenseMatrix.create(latentK, 1, theXyArray)
           val w = theXtX \ theXy
           PregelVertex(w.data)
@@ -115,6 +114,19 @@ object ALS {
     val factor = Array.fill(rank)(math.abs(rand.nextGaussian()))
     val norm = math.sqrt(factor.map(x => x * x).sum)
     factor.map(x => x / norm)
+  }
+
+  private def matrixFromTriangular(rank: Int, triangular: Array[Double]): DenseMatrix[Double] = {
+    val arr = new Array[Double](rank * rank)
+    var pos = 0
+    for (i <- 0 until rank) {
+      for (j <- i until rank) {
+        arr(i * rank + j) = triangular(pos)
+        arr(j * rank + i) = triangular(pos)
+        pos += 1
+      }
+    }
+    DenseMatrix.create(rank, rank, arr)
   }
 
   // From http://stackoverflow.com/questions/5147738/supressing-sign-extension-when-upcasting-or-shifting-in-java
