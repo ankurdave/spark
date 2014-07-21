@@ -62,7 +62,7 @@ object ALS {
       val y = edge.attr
       val theX = if (sendToDst) edge.srcAttr.attr else edge.dstAttr.attr
       val theXy = theX.map(_ * y)
-      val theXtX = (for (i <- 0 until latentK; j <- i until latentK) yield theX(i) * theX(j)).toArray
+      val theXtX = (for (i <- 0 until latentK; j <- 0 until latentK) yield theX(i) * theX(j)).toArray
       val msg = (theXy, theXtX)
       val recipient = if (sendToDst) edge.dstId else edge.srcId
       Iterator((recipient, msg))
@@ -85,10 +85,8 @@ object ALS {
       : PregelVertex[Array[Double]] = {
       msg match {
         case Some((theXyArray, theXtXArray)) =>
-          val theXtX = DenseMatrix.tabulate(latentK, latentK) { (i, j) =>
-            (if (i < j) theXtXArray(j + (i+1)*i/2) else theXtXArray(i + (j+1)*j/2)) +
-            (if (i == j) lambda else 1.0F) // regularization
-          }
+          val theXtX = DenseMatrix.create(latentK, latentK, theXtXArray)
+          // + (if (i == j) lambda else 1.0F) // regularization
           val theXy = DenseMatrix.create(latentK, 1, theXyArray)
           val w = theXtX \ theXy
           PregelVertex(w.data)
