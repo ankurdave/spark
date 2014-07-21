@@ -93,13 +93,7 @@ object ALS {
           val reg = DenseMatrix.eye[Double](latentK) * lambda
           val theXtX = DenseMatrix.create(latentK, latentK, theXtXArray) + reg
           val theXy = DenseMatrix.create(latentK, 1, theXyArray)
-          val w = try {
-            theXtX \ theXy
-          } catch {
-            case e: breeze.linalg.MatrixSingularException =>
-              println(theXtX)
-              throw e
-          }
+          val w = theXtX \ theXy
           PregelVertex(w.data)
         case None =>
           vertex

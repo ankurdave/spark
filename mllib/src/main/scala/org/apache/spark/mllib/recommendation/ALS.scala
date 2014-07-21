@@ -21,7 +21,6 @@ import scala.collection.mutable.{ArrayBuffer, BitSet}
 import scala.math.{abs, sqrt}
 import scala.util.Random
 import scala.util.Sorting
-import scala.util.hashing.byteswap32
 
 import org.jblas.{DoubleMatrix, SimpleBlas, Solve}
 
