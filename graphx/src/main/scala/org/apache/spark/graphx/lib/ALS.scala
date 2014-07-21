@@ -53,7 +53,7 @@ object ALS {
   }
 
   /** Implementation that operates on a graph. */
-  private def run[VD: ClassTag, ED: ClassTag](graph: Graph[VD, Double],
+  private def run[VD](graph: Graph[VD, Double],
       latentK: Int, lambda: Double, numIter: Int): Graph[Array[Double], Double] = {
     // Initialize user and product factors randomly, but use a deterministic seed for each partition
     // so that fault recovery works
@@ -90,10 +90,16 @@ object ALS {
       : PregelVertex[Array[Double]] = {
       msg match {
         case Some((theXyArray, theXtXArray)) =>
-          val theXtX = DenseMatrix.create(latentK, latentK, theXtXArray)
-          // + (if (i == j) lambda else 1.0F) // regularization
+          val reg = DenseMatrix.eye[Double](latentK) * lambda
+          val theXtX = DenseMatrix.create(latentK, latentK, theXtXArray) + reg
           val theXy = DenseMatrix.create(latentK, 1, theXyArray)
-          val w = theXtX \ theXy
+          val w = try {
+            theXtX \ theXy
+          } catch {
+            case e: breeze.linalg.MatrixSingularException =>
+              println(theXtX)
+              throw e
+          }
           PregelVertex(w.data)
         case None =>
           vertex
