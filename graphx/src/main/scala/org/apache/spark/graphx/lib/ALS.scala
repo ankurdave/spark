@@ -18,6 +18,8 @@
 package org.apache.spark.graphx.lib
 
 import scala.reflect.ClassTag
+import scala.util.Random
+import scala.util.hashing.byteswap32
 
 import breeze.linalg._
 import org.jblas.DoubleMatrix
@@ -53,8 +55,11 @@ object ALS {
   /** Implementation that operates on a graph. */
   private def run[VD: ClassTag, ED: ClassTag](graph: Graph[VD, Double],
       latentK: Int, lambda: Double, numIter: Int): Graph[Array[Double], Double] = {
+    // Initialize user and product factors randomly, but use a deterministic seed for each partition
+    // so that fault recovery works
+    val seed = new Random().nextLong
     val alsGraph = graph.mapVertices((id, attr) =>
-      Array.fill(latentK){ scala.util.Random.nextDouble() }).cache()
+      randomFactor(latentK, new Random(seed ^ id))).cache()
 
     def sendMsg(iteration: Int, edge: EdgeTriplet[PregelVertex[Array[Double]], Double])
       : Iterator[(VertexId, (Array[Double], Array[Double]))] = {
@@ -96,6 +101,20 @@ object ALS {
     }
 
     Pregel.run(alsGraph, numIter)(vprog, sendMsg, mergeMsg)
+  }
+
+  /**
+   * Make a random factor vector with the given random.
+   */
+  private def randomFactor(rank: Int, rand: Random): Array[Double] = {
+    // Choose a unit vector uniformly at random from the unit sphere, but from the
+    // "first quadrant" where all elements are nonnegative. This can be done by choosing
+    // elements distributed as Normal(0,1) and taking the absolute value, and then normalizing.
+    // This appears to create factorizations that have a slightly better reconstruction
+    // (<1%) compared picking elements uniformly at random in [0,1].
+    val factor = Array.fill(rank)(math.abs(rand.nextGaussian()))
+    val norm = math.sqrt(factor.map(x => x * x).sum)
+    factor.map(x => x / norm)
   }
 
   // From http://stackoverflow.com/questions/5147738/supressing-sign-extension-when-upcasting-or-shifting-in-java
