@@ -171,18 +171,18 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
   // Lower level transformation methods
   // ///////////////////////////////////////////////////////////////////////////////////////////////
 
-  override def mapReduceTriplets[A: ClassTag](
+  override def mapReduceTripletsCustomReplication[A: ClassTag](
       mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
       reduceFunc: (A, A) => A,
-      activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None): VertexRDD[A] = {
+      activeSetOpt: Option[(VertexRDD[_], EdgeDirection)],
+      replicateSrc: Boolean,
+      replicateDst: Boolean): VertexRDD[A] = {
 
     vertices.cache()
 
     // For each vertex, replicate its attribute only to partitions where it is
     // in the relevant position in an edge.
-    val mapUsesSrcAttr = accessesVertexAttr(mapFunc, "srcAttr")
-    val mapUsesDstAttr = accessesVertexAttr(mapFunc, "dstAttr")
-    replicatedVertexView.upgrade(vertices, mapUsesSrcAttr, mapUsesDstAttr)
+    replicatedVertexView.upgrade(vertices, replicateSrc, replicateDst)
     val view = activeSetOpt match {
       case Some((activeSet, _)) =>
         replicatedVertexView.withActiveSet(activeSet)
@@ -223,7 +223,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         }
 
         // Scan edges and run the map function
-        val mapOutputs = edgePartition.upgradeIterator(edgeIter, mapUsesSrcAttr, mapUsesDstAttr)
+        val mapOutputs = edgePartition.upgradeIterator(edgeIter, replicateSrc, replicateDst)
           .flatMap(mapFunc(_))
         // Note: This doesn't allow users to send messages to arbitrary vertices.
         edgePartition.vertices.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
@@ -232,6 +232,15 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     // do the final reduction reusing the index map
     vertices.aggregateUsingIndex(preAgg, reduceFunc)
   } // end of mapReduceTriplets
+
+  override def mapReduceTriplets[A: ClassTag](
+      mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+      reduceFunc: (A, A) => A,
+      activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None): VertexRDD[A] = {
+    val mapUsesSrcAttr = accessesVertexAttr(mapFunc, "srcAttr")
+    val mapUsesDstAttr = accessesVertexAttr(mapFunc, "dstAttr")
+    mapReduceTripletsCustomReplication(mapFunc, reduceFunc, activeSetOpt, mapUsesSrcAttr, mapUsesDstAttr)
+  }
 
   override def outerJoinVertices[U: ClassTag, VD2: ClassTag]
       (other: RDD[(VertexId, U)])

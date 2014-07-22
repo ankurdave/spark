@@ -60,6 +60,10 @@ object ALS {
     val alsGraph = graph.mapVertices((id, attr) =>
       randomFactor(latentK, new Random(seed ^ id))).cache()
 
+    def replication(iteration: Int): (Boolean, Boolean) = {
+      val sendToDst = iteration % 2 == 0
+      (sendToDst, !sendToDst)
+    }
     def sendMsg(iteration: Int, edge: EdgeTriplet[PregelVertex[Array[Double]], Double])
       : Iterator[(VertexId, Array[(Double, Array[Double])])] = {
       val sendToDst = iteration % 2 == 0
@@ -106,7 +110,7 @@ object ALS {
       }
     }
 
-    Pregel.run(alsGraph, numIter)(vprog, sendMsg, mergeMsg)
+    Pregel.runWithCustomReplication(alsGraph, numIter)(replication, vprog, sendMsg, mergeMsg)
   }
 
   /**

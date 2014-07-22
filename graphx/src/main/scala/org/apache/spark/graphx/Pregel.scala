@@ -19,7 +19,7 @@ package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
 import org.apache.spark.Logging
-
+import org.apache.spark.graphx.util.BytecodeUtils
 
 /**
  * The Pregel Vertex class contains the vertex attribute and the boolean flag
@@ -115,11 +115,12 @@ object Pregel extends Logging {
   /**
    * The new Pregel API.
    */
-  def run[VD: ClassTag, ED: ClassTag, A: ClassTag]
+  def runWithCustomReplication[VD: ClassTag, ED: ClassTag, A: ClassTag]
   (graph: Graph[VD, ED],
    maxIterations: Int = Int.MaxValue,
    activeDirection: EdgeDirection = EdgeDirection.Either)
-  (vertexProgram: (Int, VertexId, PregelVertex[VD], Option[A]) => PregelVertex[VD],
+  (replication: Int => (Boolean, Boolean),
+   vertexProgram: (Int, VertexId, PregelVertex[VD], Option[A]) => PregelVertex[VD],
    computeMsgs: (Int, EdgeTriplet[PregelVertex[VD], ED]) => Iterator[(VertexId, A)],
    mergeMsg: (A, A) => A)
   : Graph[VD, ED] =
@@ -136,8 +137,9 @@ object Pregel extends Logging {
       val prevG = currengGraph
 
       // Compute the messages for all the active vertices
-      val messages = currengGraph.mapReduceTriplets( t => computeMsgs(iteration, t), mergeMsg,
-        Some((activeVertices, activeDirection)))
+      val (replicateSrc, replicateDst) = replication(iteration)
+      val messages = currengGraph.mapReduceTripletsCustomReplication( t => computeMsgs(iteration, t), mergeMsg,
+        Some((activeVertices, activeDirection)), replicateSrc, replicateDst)
 
       // Receive the messages to the subset of active vertices
       currengGraph = currengGraph.outerJoinVertices(messages){ (vid, pVertex, msgOpt) =>
@@ -171,6 +173,33 @@ object Pregel extends Logging {
     currengGraph.mapVertices((id, vdata) => vdata.attr)
   } // end of apply
 
+
+  /**
+   * The new Pregel API.
+   */
+  def run[VD: ClassTag, ED: ClassTag, A: ClassTag]
+     (graph: Graph[VD, ED],
+      maxIterations: Int = Int.MaxValue,
+      activeDirection: EdgeDirection = EdgeDirection.Either)
+     (vertexProgram: (Int, VertexId, PregelVertex[VD], Option[A]) => PregelVertex[VD],
+      computeMsgs: (Int, EdgeTriplet[PregelVertex[VD], ED]) => Iterator[(VertexId, A)],
+      mergeMsg: (A, A) => A)
+    : Graph[VD, ED] = {
+    val mapUsesSrcAttr = accessesVertexAttr[VD, ED](computeMsgs, "srcAttr")
+    val mapUsesDstAttr = accessesVertexAttr[VD, ED](computeMsgs, "dstAttr")
+    runWithCustomReplication(graph, maxIterations, activeDirection)(
+      iteration => (mapUsesSrcAttr, mapUsesDstAttr),
+      vertexProgram, computeMsgs, mergeMsg)
+  }
+
+  /** Test whether the closure accesses the the attribute with name `attrName`. */
+  private def accessesVertexAttr[VD: ClassTag, ED: ClassTag](closure: AnyRef, attrName: String): Boolean = {
+    try {
+      BytecodeUtils.invokedMethod(closure, classOf[EdgeTriplet[VD, ED]], attrName)
+    } catch {
+      case _: ClassNotFoundException => true // if we don't know, be conservative
+    }
+  }
 
   /**
    * Execute a Pregel-like iterative vertex-parallel abstraction.  The
