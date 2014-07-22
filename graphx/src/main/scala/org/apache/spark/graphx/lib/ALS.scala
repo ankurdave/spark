@@ -53,7 +53,7 @@ object ALS {
   }
 
   /** Implementation that operates on a graph. */
-  private def run[VD: ClassTag, ED: ClassTag](graph: Graph[VD, Double],
+  private def run[VD](graph: Graph[VD, Double],
       latentK: Int, lambda: Double, numIter: Int): Graph[Array[Double], Double] = {
     // Initialize user and product factors randomly, but use a deterministic seed for each partition
     // so that fault recovery works
@@ -62,36 +62,38 @@ object ALS {
       randomFactor(latentK, new Random(seed ^ id))).cache()
 
     def sendMsg(iteration: Int, edge: EdgeTriplet[PregelVertex[Array[Double]], Double])
-      : Iterator[(VertexId, (Array[Double], Array[Double]))] = {
+      : Iterator[(VertexId, (Array[Double], Array[Array[Double]]))] = {
       val sendToDst = iteration % 2 == 0
       val y = edge.attr
       val theX = if (sendToDst) edge.srcAttr.attr else edge.dstAttr.attr
       val theXy = theX.map(_ * y)
-      val theXtX = (for (i <- 0 until latentK; j <- 0 until latentK) yield theX(i) * theX(j)).toArray
-      val msg = (theXy, theXtX)
+      val msg = (theXy, Array(theX))
       val recipient = if (sendToDst) edge.dstId else edge.srcId
       Iterator((recipient, msg))
     }
     def mergeMsg(
-        a: (Array[Double], Array[Double]),
-        b: (Array[Double], Array[Double]))
-      : (Array[Double], Array[Double]) = {
+        a: (Array[Double], Array[Array[Double]]),
+        b: (Array[Double], Array[Array[Double]]))
+      : (Array[Double], Array[Array[Double]]) = {
+      val mergedXy = a._1
       var i = 0
-      while (i < a._1.length) { a._1(i) += b._1(i); i += 1 }
-      i = 0
-      while (i < a._2.length) { a._2(i) += b._2(i); i += 1 }
-      a
+      while (i < mergedXy.length) { mergedXy(i) += b._1(i); i += 1 }
+      val mergedXs = a._2 ++ b._2
+      (mergedXy, mergedXs)
     }
     def vprog(
         iteration: Int,
         id: VertexId,
         vertex: PregelVertex[Array[Double]],
-        msg: Option[(Array[Double], Array[Double])])
+        msg: Option[(Array[Double], Array[Array[Double]])])
       : PregelVertex[Array[Double]] = {
       msg match {
-        case Some((theXyArray, theXtXArray)) =>
-          val theXtX = DenseMatrix.create(latentK, latentK, theXtXArray)
-          // + (if (i == j) lambda else 1.0F) // regularization
+        case Some((theXyArray, theXs)) =>
+          var theXtX = DenseMatrix.eye[Double](latentK) * lambda
+          for (theXArray <- theXs) {
+            val theX = DenseVector(theXArray)
+            theXtX += theX * theX.t
+          }
           val theXy = DenseMatrix.create(latentK, 1, theXyArray)
           val w = theXtX \ theXy
           PregelVertex(w.data)
