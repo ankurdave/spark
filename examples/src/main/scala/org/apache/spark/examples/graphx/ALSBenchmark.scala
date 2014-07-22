@@ -89,14 +89,14 @@ object ALSBenchmark {
     // Run MLlib ALS
     startTime = System.currentTimeMillis
     val mllibModel =
-      org.apache.spark.mllib.recommendation.ALS.train(ratings, rank, niter)
+      org.apache.spark.mllib.recommendation.ALS.train(ratings, rank, niter, 0.01, numEPart)
     println(s"MLlib predicted rating for ($testUser, $testProduct): ${mllibModel.predict(testUser, testProduct)}")
     println(s"MLlib ran in ${System.currentTimeMillis - startTime} ms")
 
     // Run GraphX ALS
     startTime = System.currentTimeMillis
     val graphxModel =
-      org.apache.spark.graphx.lib.ALS.train(ratings, rank, niter)
+      org.apache.spark.graphx.lib.ALS.train(ratings, rank, niter, 0.01)
     println(s"GraphX predicted rating for ($testUser, $testProduct): ${graphxModel.predict(testUser, testProduct)}")
     println(s"GraphX ran in ${System.currentTimeMillis - startTime} ms")
 
