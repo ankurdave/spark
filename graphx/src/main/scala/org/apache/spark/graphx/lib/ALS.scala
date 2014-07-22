@@ -21,8 +21,7 @@ import scala.reflect.ClassTag
 import scala.util.Random
 import scala.util.hashing.byteswap32
 
-import breeze.linalg._
-import org.jblas.DoubleMatrix
+import org.jblas.{DoubleMatrix, SimpleBlas, Solve}
 
 import org.apache.spark.SparkContext._
 import org.apache.spark.mllib.recommendation.MatrixFactorizationModel
@@ -62,40 +61,45 @@ object ALS {
       randomFactor(latentK, new Random(seed ^ id))).cache()
 
     def sendMsg(iteration: Int, edge: EdgeTriplet[PregelVertex[Array[Double]], Double])
-      : Iterator[(VertexId, (Array[Double], Array[Array[Double]]))] = {
+      : Iterator[(VertexId, Array[(Double, Array[Double])])] = {
       val sendToDst = iteration % 2 == 0
       val y = edge.attr
       val theX = if (sendToDst) edge.srcAttr.attr else edge.dstAttr.attr
-      val theXy = theX.map(_ * y)
-      val msg = (theXy, Array(theX))
+      val msg = Array((y, theX))
       val recipient = if (sendToDst) edge.dstId else edge.srcId
       Iterator((recipient, msg))
     }
     def mergeMsg(
-        a: (Array[Double], Array[Array[Double]]),
-        b: (Array[Double], Array[Array[Double]]))
-      : (Array[Double], Array[Array[Double]]) = {
-      val mergedXy = a._1
-      var i = 0
-      while (i < mergedXy.length) { mergedXy(i) += b._1(i); i += 1 }
-      val mergedXs = a._2 ++ b._2
-      (mergedXy, mergedXs)
-    }
+        a: Array[(Double, Array[Double])],
+        b: Array[(Double, Array[Double])])
+      : Array[(Double, Array[Double])] = a ++ b
     def vprog(
         iteration: Int,
         id: VertexId,
         vertex: PregelVertex[Array[Double]],
-        msg: Option[(Array[Double], Array[Array[Double]])])
+        msg: Option[Array[(Double, Array[Double])]])
       : PregelVertex[Array[Double]] = {
       msg match {
-        case Some((theXyArray, theXs)) =>
-          var theXtX = DenseMatrix.eye[Double](latentK) * lambda
-          for (theXArray <- theXs) {
-            val theX = DenseVector(theXArray)
-            theXtX += theX * theX.t
+        case Some(msgs) =>
+          val triangleSize = latentK * (latentK + 1) / 2
+          val tempXtX = new Array[Double](triangleSize)
+          val theXy = DoubleMatrix.zeros(latentK)
+          for ((y, theXArray) <- msgs) {
+            // tempXtX += theX * theX.t
+            dspr(theXArray, tempXtX)
+            // theXy += theX * y
+            SimpleBlas.axpy(y, wrapDoubleArray(theXArray), theXy)
           }
-          val theXy = DenseMatrix.create(latentK, 1, theXyArray)
-          val w = theXtX \ theXy
+
+          val fullXtX = fillFullMatrix(latentK, tempXtX)
+          // Add regularization
+          var i = 0
+          while (i < latentK) {
+            fullXtX.data(i * latentK + i) += lambda
+            i += 1
+          }
+
+          val w = Solve.solvePositive(fullXtX, theXy)
           PregelVertex(w.data)
         case None =>
           vertex
@@ -103,6 +107,59 @@ object ALS {
     }
 
     Pregel.run(alsGraph, numIter)(vprog, sendMsg, mergeMsg)
+  }
+
+  /**
+   * Adds theX * theX.t to a matrix (theXtX) in-place.
+   *
+   * @param theXtX the lower triangular part of the matrix packed in an array (row major)
+   */
+  private def dspr(theX: Array[Double], theXtX: Array[Double]) {
+    val n = theX.length
+    var i = 0
+    var j = 0
+    var idx = 0
+    var xi = 0.0
+    while (i < n) {
+      xi = theX(i)
+      j = 0
+      while (j <= i) {
+        theXtX(idx) += xi * theX(j)
+        j += 1
+        idx += 1
+      }
+      i += 1
+    }
+  }
+
+  /**
+   * Wrap a double array in a DoubleMatrix without creating garbage.
+   * This is a temporary fix for jblas 1.2.3; it should be safe to move back to the
+   * DoubleMatrix(double[]) constructor come jblas 1.2.4.
+   */
+  private def wrapDoubleArray(v: Array[Double]): DoubleMatrix = {
+    new DoubleMatrix(v.length, 1, v: _*)
+  }
+
+  /**
+   * Given a row-major lower-triangular matrix, compute the full symmetric square
+   * matrix that it represents, storing it into destMatrix.
+   */
+  private def fillFullMatrix(rank: Int, triangularMatrix: Array[Double]): DoubleMatrix = {
+    val destMatrix = DoubleMatrix.zeros(rank, rank)
+    var i = 0
+    var pos = 0
+    while (i < rank) {
+      var j = 0
+      while (j <= i) {
+        destMatrix.data(i*rank + j) = triangularMatrix(pos)
+        destMatrix.data(j*rank + i) = triangularMatrix(pos)
+        pos += 1
+        j += 1
+      }
+      i += 1
+    }
+    destMatrix
   }
 
   /**
