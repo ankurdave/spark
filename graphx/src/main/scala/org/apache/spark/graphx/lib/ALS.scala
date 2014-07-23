@@ -76,7 +76,8 @@ object ALS {
     def mergeMsg(
         a: Array[(Double, Array[Double])],
         b: Array[(Double, Array[Double])])
-      : Array[(Double, Array[Double])] = a ++ b
+        : Array[(Double, Array[Double])] = a ++ b
+    // TODO: send contiguous matrix X with rows x_i and a y vector
     def vprog(
         iteration: Int,
         id: VertexId,
@@ -97,6 +98,7 @@ object ALS {
 
           val fullXtX = fillFullMatrix(latentK, tempXtX)
           // Add regularization
+          // TODO: use msg.length for regularization
           var i = 0
           while (i < latentK) {
             fullXtX.data(i * latentK + i) += lambda
@@ -110,6 +112,8 @@ object ALS {
       }
     }
 
+    // TODO: write custom bipartite Pregel that partitions edges twice (by source and by dest) to
+    // avoid sending duplicate factors from the same user to products in the same partition
     Pregel.runWithCustomReplication(alsGraph, numIter)(replication, vprog, sendMsg, mergeMsg)
   }
 
