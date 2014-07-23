@@ -60,6 +60,7 @@ object ALSBenchmark {
     var numRatings = 1000000
     var numEPart = sc.defaultParallelism
     var rank = 100
+    var input: Option[String] = None
 
     options.foreach {
       case ("niter", v) => niter = v.toInt
@@ -68,21 +69,31 @@ object ALSBenchmark {
       case ("numRatings", v) => numRatings = v.toInt
       case ("numEPart", v) => numEPart = v.toInt
       case ("rank", v) => rank = v.toInt
+      case ("input", v) => input = Some(v)
       case (opt, _) => throw new IllegalArgumentException("Invalid option: " + opt)
     }
 
     // Generate the ratings
-    val ratingsPerPartition = numRatings / numEPart
-    val ratings = sc.parallelize(0 until numEPart, numEPart).flatMap { i =>
-      val r = new util.Random(i)
-      Iterator.fill(ratingsPerPartition) {
-        Rating(r.nextInt(numUsers), r.nextInt(numProducts), r.nextDouble())
+    val ratings = input match {
+      case Some(path) => sc.textFile(path, numEPart).coalesce(numEPart).map { line =>
+        val fields = line.split(' ')
+        Rating(fields(0).hashCode, fields(1).hashCode, fields(2).toDouble)
       }
-    }.cache()
+      case None =>
+        val ratingsPerPartition = numRatings / numEPart
+        sc.parallelize(0 until numEPart, numEPart).flatMap { i =>
+          val r = new util.Random(i)
+          Iterator.fill(ratingsPerPartition) {
+            Rating(r.nextInt(numUsers), r.nextInt(numProducts), r.nextDouble())
+          }
+        }
+    }
+    ratings.cache()
+
     val sampleRatings = ratings.take(2).toList
     val testUser = sampleRatings(0).user
     val testProduct = sampleRatings(1).product
-    println(s"Created ${ratings.count} ratings: $sampleRatings")
+    println(s"Created ${ratings.count} ratings: $sampleRatings ...")
 
     var startTime = 0L
 
