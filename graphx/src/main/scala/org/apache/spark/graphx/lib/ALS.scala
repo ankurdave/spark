@@ -98,10 +98,9 @@ object ALS {
 
           val fullXtX = fillFullMatrix(latentK, tempXtX)
           // Add regularization
-          // TODO: use msg.length for regularization
           var i = 0
           while (i < latentK) {
-            fullXtX.data(i * latentK + i) += lambda
+            fullXtX.data(i * latentK + i) += lambda * msgs.length
             i += 1
           }
 
