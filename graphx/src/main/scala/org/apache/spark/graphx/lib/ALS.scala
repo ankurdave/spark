@@ -114,7 +114,9 @@ object ALS {
 
     // TODO: write custom bipartite Pregel that partitions edges twice (by source and by dest) to
     // avoid sending duplicate factors from the same user to products in the same partition
-    Pregel.runWithCustomReplication(alsGraph, numIter)(replication, vprog, sendMsg, mergeMsg)
+
+    // Double the number of iterations because of the alternating behavior of ALS
+    Pregel.runWithCustomReplication(alsGraph, numIter * 2)(replication, vprog, sendMsg, mergeMsg)
   }
 
   /**
