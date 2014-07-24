@@ -112,6 +112,8 @@ sealed case class PregelVertex[@specialized T]
  *
  */
 object Pregel extends Logging {
+  // TODO: create a version of pregel without activeness that avoids the cost of the PregelVertex
+  // (and avoids shipping the vertex ids for activeness tracking)
   /**
    * The new Pregel API.
    */

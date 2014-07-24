@@ -227,6 +227,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
           .flatMap(mapFunc(_))
         // Note: This doesn't allow users to send messages to arbitrary vertices.
         edgePartition.vertices.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
+        // TODO: provide the option of automatically aggregating map outputs into an ArrayBuffer
     }).setName("GraphImpl.mapReduceTriplets - preAgg")
 
     // do the final reduction reusing the index map
