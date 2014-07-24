@@ -66,18 +66,27 @@ object ALS {
       (sendToDst, !sendToDst)
     }
     def sendMsg(iteration: Int, edge: EdgeTriplet[PregelVertex[Array[Double]], Double])
-      : Iterator[(VertexId, ArrayBuffer[(Double, Array[Double])])] = {
+      : Iterator[(VertexId, (Double, Array[Double]))] = {
       val sendToDst = iteration % 2 == 0
       val y = edge.attr
       val theX = if (sendToDst) edge.srcAttr.attr else edge.dstAttr.attr
-      val msg = ArrayBuffer((y, theX))
+      val msg = (y, theX)
       val recipient = if (sendToDst) edge.dstId else edge.srcId
       Iterator((recipient, msg))
     }
-    def mergeMsg(
-        a: ArrayBuffer[(Double, Array[Double])],
-        b: ArrayBuffer[(Double, Array[Double])])
-        : ArrayBuffer[(Double, Array[Double])] = a ++ b
+    def newCombiner(a: (Double, Array[Double])): ArrayBuffer[(Double, Array[Double])] = ArrayBuffer(a)
+    def combineFunc(b: ArrayBuffer[(Double, Array[Double])], a: (Double, Array[Double]))
+        : ArrayBuffer[(Double, Array[Double])] = {
+      b.append(a)
+      b
+    }
+    def serializeCombiner(b: ArrayBuffer[(Double, Array[Double])]): Array[(Double, Array[Double])] = b.toArray
+    def deserializeCombiner(c: Array[(Double, Array[Double])]): ArrayBuffer[(Double, Array[Double])] = c.to[ArrayBuffer]
+    def serializedCombineFunc(b: ArrayBuffer[(Double, Array[Double])], c: Array[(Double, Array[Double])])
+        : ArrayBuffer[(Double, Array[Double])] = {
+      b.appendAll(c)
+      b
+    }
     // TODO: send contiguous matrix X with rows x_i and a y vector
     def vprog(
         iteration: Int,
@@ -116,7 +125,7 @@ object ALS {
     // avoid sending duplicate factors from the same user to products in the same partition
 
     // Double the number of iterations because of the alternating behavior of ALS
-    Pregel.runWithCustomReplication(alsGraph, numIter * 2)(replication, vprog, sendMsg, mergeMsg)
+    Pregel.runWithCustomReplication(alsGraph, numIter * 2)(replication, vprog, sendMsg, newCombiner, combineFunc, serializeCombiner, deserializeCombiner, serializedCombineFunc)
   }
 
   /**

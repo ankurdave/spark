@@ -117,14 +117,18 @@ object Pregel extends Logging {
   /**
    * The new Pregel API.
    */
-  def runWithCustomReplication[VD: ClassTag, ED: ClassTag, A: ClassTag]
+  def runWithCustomReplication[VD: ClassTag, ED: ClassTag, A: ClassTag, B: ClassTag, C: ClassTag]
   (graph: Graph[VD, ED],
    maxIterations: Int = Int.MaxValue,
    activeDirection: EdgeDirection = EdgeDirection.Either)
   (replication: Int => (Boolean, Boolean),
-   vertexProgram: (Int, VertexId, PregelVertex[VD], Option[A]) => PregelVertex[VD],
+   vertexProgram: (Int, VertexId, PregelVertex[VD], Option[B]) => PregelVertex[VD],
    computeMsgs: (Int, EdgeTriplet[PregelVertex[VD], ED]) => Iterator[(VertexId, A)],
-   mergeMsg: (A, A) => A)
+   newCombiner: A => B,
+   combineFunc: (B, A) => B,
+   serializeCombiner: B => C,
+   deserializeCombiner: C => B,
+   serializedCombineFunc: (B, C) => B)
   : Graph[VD, ED] =
   {
     // Initialize the graph with all vertices active
@@ -140,7 +144,8 @@ object Pregel extends Logging {
 
       // Compute the messages for all the active vertices
       val (replicateSrc, replicateDst) = replication(iteration)
-      val messages = currengGraph.mapReduceTripletsCustomReplication( t => computeMsgs(iteration, t), mergeMsg,
+      val messages = currengGraph.mapReduceTripletsCustomReplication(
+        t => computeMsgs(iteration, t), newCombiner, combineFunc, serializeCombiner, deserializeCombiner, serializedCombineFunc,
         Some((activeVertices, activeDirection)), replicateSrc, replicateDst)
 
       // Receive the messages to the subset of active vertices
@@ -189,9 +194,9 @@ object Pregel extends Logging {
     : Graph[VD, ED] = {
     val mapUsesSrcAttr = accessesVertexAttr[VD, ED](computeMsgs, "srcAttr")
     val mapUsesDstAttr = accessesVertexAttr[VD, ED](computeMsgs, "dstAttr")
-    runWithCustomReplication(graph, maxIterations, activeDirection)(
+    runWithCustomReplication[VD, ED, A, A, A](graph, maxIterations, activeDirection)(
       iteration => (mapUsesSrcAttr, mapUsesDstAttr),
-      vertexProgram, computeMsgs, mergeMsg)
+      vertexProgram, computeMsgs, identity, mergeMsg, identity, identity, mergeMsg)
   }
 
   /** Test whether the closure accesses the the attribute with name `attrName`. */

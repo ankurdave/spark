@@ -304,6 +304,17 @@ class VertexRDD[@specialized VD: ClassTag](
     this.withPartitionsRDD[VD2](parts)
   }
 
+  def combineUsingIndex[A: ClassTag, B: ClassTag](
+      messages: RDD[(VertexId, A)],
+      newCombiner: A => B,
+      combineFunc: (B, A) => B): VertexRDD[B] = {
+    val shuffled = messages.copartitionWithVertices(this.partitioner.get)
+    val parts = partitionsRDD.zipPartitions(shuffled, true) { (thisIter, msgIter) =>
+      thisIter.map(_.combineUsingIndex(msgIter, newCombiner, combineFunc))
+    }
+    this.withPartitionsRDD[B](parts)
+  }
+
   /**
    * Returns a new `VertexRDD` reflecting a reversal of all edge directions in the corresponding
    * [[EdgeRDD]].

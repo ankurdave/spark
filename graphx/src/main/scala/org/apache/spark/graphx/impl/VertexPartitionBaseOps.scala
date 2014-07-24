@@ -220,6 +220,28 @@ private[graphx] abstract class VertexPartitionBaseOps
     this.withValues(newValues).withMask(newMask)
   }
 
+  def combineUsingIndex[A: ClassTag, B: ClassTag](
+      iter: Iterator[Product2[VertexId, A]],
+      newCombiner: A => B,
+      combineFunc: (B, A) => B): Self[B] = {
+    val newMask = new BitSet(self.capacity)
+    val newValues = new Array[B](self.capacity)
+    iter.foreach { product =>
+      val vid = product._1
+      val vdata = product._2
+      val pos = self.index.getPos(vid)
+      if (pos >= 0) {
+        if (newMask.get(pos)) {
+          newValues(pos) = combineFunc(newValues(pos), vdata)
+        } else {
+          newMask.set(pos)
+          newValues(pos) = newCombiner(vdata)
+        }
+      }
+    }
+    this.withValues(newValues).withMask(newMask)
+  }
+
   /**
    * Construct a new VertexPartition whose index contains only the vertices in the mask.
    */

@@ -325,13 +325,16 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
       activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None)
     : VertexRDD[A]
 
-  def mapReduceTripletsCustomReplication[A: ClassTag](
+  def mapReduceTripletsCustomReplication[A: ClassTag, B: ClassTag, C: ClassTag](
       mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
-      reduceFunc: (A, A) => A,
+      newCombiner: A => B,
+      combineFunc: (B, A) => B,
+      serializeCombiner: B => C,
+      deserializeCombiner: C => B,
+      serializedCombineFunc: (B, C) => B,
       activeSetOpt: Option[(VertexRDD[_], EdgeDirection)],
       replicateSrc: Boolean,
-      replicateDst: Boolean): VertexRDD[A]
-
+      replicateDst: Boolean): VertexRDD[B]
   /**
    * Joins the vertices with entries in the `table` RDD and merges the results using `mapFunc`.  The
    * input table should contain at most one entry for each vertex.  If no entry in `other` is
