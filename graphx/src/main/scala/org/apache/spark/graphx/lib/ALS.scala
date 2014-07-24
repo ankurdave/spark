@@ -17,6 +17,7 @@
 
 package org.apache.spark.graphx.lib
 
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 import scala.util.Random
 import scala.util.hashing.byteswap32
@@ -65,24 +66,24 @@ object ALS {
       (sendToDst, !sendToDst)
     }
     def sendMsg(iteration: Int, edge: EdgeTriplet[PregelVertex[Array[Double]], Double])
-      : Iterator[(VertexId, Array[(Double, Array[Double])])] = {
+      : Iterator[(VertexId, ArrayBuffer[(Double, Array[Double])])] = {
       val sendToDst = iteration % 2 == 0
       val y = edge.attr
       val theX = if (sendToDst) edge.srcAttr.attr else edge.dstAttr.attr
-      val msg = Array((y, theX))
+      val msg = ArrayBuffer((y, theX))
       val recipient = if (sendToDst) edge.dstId else edge.srcId
       Iterator((recipient, msg))
     }
     def mergeMsg(
-        a: Array[(Double, Array[Double])],
-        b: Array[(Double, Array[Double])])
-        : Array[(Double, Array[Double])] = a ++ b
+        a: ArrayBuffer[(Double, Array[Double])],
+        b: ArrayBuffer[(Double, Array[Double])])
+        : ArrayBuffer[(Double, Array[Double])] = a ++ b
     // TODO: send contiguous matrix X with rows x_i and a y vector
     def vprog(
         iteration: Int,
         id: VertexId,
         vertex: PregelVertex[Array[Double]],
-        msg: Option[Array[(Double, Array[Double])]])
+        msg: Option[ArrayBuffer[(Double, Array[Double])]])
       : PregelVertex[Array[Double]] = {
       msg match {
         case Some(msgs) =>
