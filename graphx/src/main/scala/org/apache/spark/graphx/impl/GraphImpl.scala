@@ -97,6 +97,24 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     GraphImpl.fromExistingRDDs(vertices.withEdges(newEdges), newEdges)
   }
 
+  override def partitionBySource(): Graph[VD, ED] = {
+    val edTag = classTag[ED]
+    val vdTag = classTag[VD]
+    val newEdges = edges.withPartitionsRDD(edges.map { e =>
+      (e.srcId, (e.dstId, e.attr))
+    }
+      .partitionBy(vertices.partitioner)
+      .mapPartitionsWithIndex( { (pid, iter) =>
+        val builder = new EdgePartitionBuilder[ED, VD]()(edTag, vdTag)
+        iter.foreach { message =>
+          builder.add(message._1, message._2._1, message._2._2)
+        }
+        val edgePartition = builder.toEdgePartition
+        Iterator((pid, edgePartition))
+      }, preservesPartitioning = true)).cache().markPartitionedBy(PartitionedBy.Source)
+    GraphImpl.fromExistingRDDs(vertices.withEdges(newEdges), newEdges)
+  }
+
   override def reverse: Graph[VD, ED] = {
     new GraphImpl(vertices.reverseRoutingTables(), replicatedVertexView.reverse())
   }
@@ -249,6 +267,46 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       val newVerts = vertices.leftJoin(other)(updateF)
       GraphImpl(newVerts, replicatedVertexView.edges)
     }
+  }
+
+  override def staticPageRank(numIter: Int, resetProb: Double = 0.15): Graph[Double, Double] = {
+    assert(replicatedVertexView.edges.isPartitionedBySource(vertices),
+      "Graph must be partitioned by source vertex to run PageRank. Call Graph#partitionBySource.")
+
+    // Because the graph is partitioned by source and only upgraded to (true, false), the
+    // following operations don't require a shuffle:
+    // - mapTriplets(... srcAttr ...)
+    // - outerJoinVertices
+    // - anything else that calls replicatedVertexView.{updateVertices, upgrade}(true, false)
+
+    var rankGraph = this
+      // Associate the degree with each vertex
+      .outerJoinVertices(graph.outDegrees /* no shuffle */) { (vid, vdata, deg) => deg.getOrElse(0) } /* no shuffle */
+      // Set the weight on the edges based on the degree
+      .mapTriplets( e => 1.0 / e.srcAttr )
+      // Set the vertex attributes to the initial pagerank values
+      .mapVertices( (id, attr) => 1.0 )
+
+    var iteration = 0
+    while (iteration < numIter) {
+      rankGraph.cache()
+
+      // Compute the outgoing rank contributions of each vertex (doesn't require a shuffle)
+      val outgoingRankContribs = rankGraph.mapTriplets(e => e.srcAttr * e.attr)
+
+      // Aggregate them at the receiving vertices (requires a shuffle)
+      val incomingRankContribs = vertices.aggregateUsingIndex(outgoingRankContribs, _ + _)
+
+      // Apply them to get the new ranks, using join to preserve ranks of vertices that didn't
+      // receive a message. Does not require a shuffle or any hash lookups. It does call
+      // RVV#updateVertices, but this doesn't need data movement.
+      rankGraph = rankGraph.outerJoinVertices(incomingRankContribs) { (id, rank, incomingContrib) =>
+        resetProb + (1.0 - resetProb) * incomingContrib }
+
+      iteration += 1
+    }
+
+    rankGraph
   }
 
   /** Test whether the closure accesses the the attribute with name `attrName`. */

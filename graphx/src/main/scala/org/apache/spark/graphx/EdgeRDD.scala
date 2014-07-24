@@ -34,7 +34,8 @@ import org.apache.spark.graphx.impl.EdgePartitionBuilder
  */
 class EdgeRDD[@specialized ED: ClassTag, VD: ClassTag](
     val partitionsRDD: RDD[(PartitionID, EdgePartition[ED, VD])],
-    val targetStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
+    val targetStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
+    private val partitionedBy: PartitionedBy = PartitionedBy.Neither)
   extends RDD[Edge[ED]](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD))) {
 
   partitionsRDD.setName("EdgeRDD")
@@ -79,6 +80,9 @@ class EdgeRDD[@specialized ED: ClassTag, VD: ClassTag](
     partitionsRDD.persist(targetStorageLevel)
     this
   }
+
+  private[graphx] def isPartitionedBySource(vertices: VertexRDD[_]): Boolean =
+    partitionedBy == PartitionedBy.Source && partitions.length == vertices.partitions.length
 
   private[graphx] def mapEdgePartitions[ED2: ClassTag, VD2: ClassTag](
       f: (PartitionID, EdgePartition[ED, VD]) => EdgePartition[ED2, VD2]): EdgeRDD[ED2, VD2] = {
@@ -141,7 +145,7 @@ class EdgeRDD[@specialized ED: ClassTag, VD: ClassTag](
   /** Replaces the vertex partitions while preserving all other properties of the VertexRDD. */
   private[graphx] def withPartitionsRDD[ED2: ClassTag, VD2: ClassTag](
       partitionsRDD: RDD[(PartitionID, EdgePartition[ED2, VD2])]): EdgeRDD[ED2, VD2] = {
-    new EdgeRDD(partitionsRDD, this.targetStorageLevel)
+    new EdgeRDD(partitionsRDD, targetStorageLevel, partitionedBy)
   }
 
   /**
@@ -153,9 +157,12 @@ class EdgeRDD[@specialized ED: ClassTag, VD: ClassTag](
    */
   private[graphx] def withTargetStorageLevel(
       targetStorageLevel: StorageLevel): EdgeRDD[ED, VD] = {
-    new EdgeRDD(this.partitionsRDD, targetStorageLevel)
+    new EdgeRDD(partitionsRDD, targetStorageLevel, partitionedBy)
   }
 
+  private[graphx] def markPartitionedBy(partitionedBy: PartitionedBy): EdgeRDD[ED, VD] = {
+    new EdgeRDD(partitionsRDD, targetStorageLevel, partitionedBy)
+  }
 }
 
 object EdgeRDD {

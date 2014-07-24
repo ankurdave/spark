@@ -64,18 +64,34 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
     val shipSrc = includeSrc && !hasSrcId
     val shipDst = includeDst && !hasDstId
     if (shipSrc || shipDst) {
-      val shippedVerts: RDD[(Int, VertexAttributeBlock[VD])] =
-        vertices.shipVertexAttributes(shipSrc, shipDst)
-          .setName("ReplicatedVertexView.upgrade(%s, %s) - shippedVerts %s %s (broadcast)".format(
-            includeSrc, includeDst, shipSrc, shipDst))
-          .partitionBy(edges.partitioner.get)
-      val newEdges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(shippedVerts) {
-        (ePartIter, shippedVertsIter) => ePartIter.map {
-          case (pid, edgePartition) =>
-            (pid, edgePartition.updateVertices(shippedVertsIter.flatMap(_._2.iterator)))
+      if (shipSrc && !shipDst && edges.isPartitionedBySource(vertices)) {
+        // The edges are partitioned by source vertex and they only need the source vertex
+        // attributes, so we can simply zip with `vertices`
+        edges = edges.partitionsRDD.zipPartitions(vertices.partitionsRDD) {
+          (ePartIter, vPartIter) => ePartIter.map {
+            case (pid, edgePartition) =>
+              if (vPartIter.hasNext) {
+                val vertexPartition = vPartIter.next()
+                (pid, edgePartition.withVertices(vertexPartition))
+              } else {
+                throw new Exception(s"ReplicatedVertexView: edge partition $pid has no corresponding vertex partition")
+              }
+          }
         }
-      })
-      edges = newEdges
+      } else {
+        // We have to ship all vertices to the edge partitions
+        val shippedVerts: RDD[(Int, VertexAttributeBlock[VD])] =
+          vertices.shipVertexAttributes(shipSrc, shipDst)
+            .setName("ReplicatedVertexView.upgrade(%s, %s) - shippedVerts %s %s (broadcast)".format(
+              includeSrc, includeDst, shipSrc, shipDst))
+            .partitionBy(edges.partitioner.get)
+        edges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(shippedVerts) {
+          (ePartIter, shippedVertsIter) => ePartIter.map {
+            case (pid, edgePartition) =>
+              (pid, edgePartition.updateVertices(shippedVertsIter.flatMap(_._2.iterator)))
+          }
+        })
+      }
       hasSrcId = includeSrc
       hasDstId = includeDst
     }
@@ -105,18 +121,34 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
    * `updates`. This ships a vertex attribute only to the edge partitions where it is in the
    * position(s) specified by the attribute shipping level.
    */
-  def updateVertices(updates: VertexRDD[VD]): ReplicatedVertexView[VD, ED] = {
-    val shippedVerts = updates.shipVertexAttributes(hasSrcId, hasDstId)
+  def updateVertices(updatedVertices: VertexRDD[VD], updates: VertexRDD[VD]): ReplicatedVertexView[VD, ED] = {
+    if (!includeDst && edges.isPartitionedBySource(vertices)) {
+      // The edges are partitioned by source vertex and they only need the source vertex attributes,
+      // so we can simply zip with `updatedVertices`
+      this.withEdges(edges.partitionsRDD.zipPartitions(updatedVertices.partitionsRDD) {
+        (ePartIter, vPartIter) => ePartIter.map {
+          case (pid, edgePartition) =>
+            if (vPartIter.hasNext) {
+              val vertexPartition = vPartIter.next()
+              (pid, edgePartition.withVertices(vertexPartition))
+            } else {
+              throw new Exception(s"ReplicatedVertexView: edge partition $pid has no corresponding vertex partition")
+            }
+        }
+      })
+    } else {
+      // We have to ship the updates and apply them to the edge partitions
+      val shippedVerts = updates.shipVertexAttributes(hasSrcId, hasDstId)
       .setName("ReplicatedVertexView.updateVertices - shippedVerts %s %s (broadcast)".format(
         hasSrcId, hasDstId))
       .partitionBy(edges.partitioner.get)
 
-    val newEdges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(shippedVerts) {
-      (ePartIter, shippedVertsIter) => ePartIter.map {
-        case (pid, edgePartition) =>
-          (pid, edgePartition.updateVertices(shippedVertsIter.flatMap(_._2.iterator)))
-      }
-    })
-    new ReplicatedVertexView(newEdges, hasSrcId, hasDstId)
+      this.withEdges(edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(shippedVerts) {
+        (ePartIter, shippedVertsIter) => ePartIter.map {
+          case (pid, edgePartition) =>
+            (pid, edgePartition.updateVertices(shippedVertsIter.flatMap(_._2.iterator)))
+        }
+      }))
+    }
   }
 }
