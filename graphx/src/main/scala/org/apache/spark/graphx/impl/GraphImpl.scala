@@ -294,20 +294,19 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     while (iteration < numIter) {
       rankGraph.cache()
 
-      // Compute the outgoing rank contributions of each vertex (doesn't require a shuffle)
-      val outgoingRankContribs = rankGraph.mapTriplets(e => e.srcAttr * e.attr).edges.map(e => (e.dstId, e.attr))
+      // Compute the outgoing rank contributions of each vertex (doesn't require a shuffle because
+      // we only access srcAttr), perform local preaggregation, and do the final aggregation at the
+      // receiving vertices (requires a shuffle)
+      val rankUpdates = rankGraph.mapReduceTriplets[Double](e => Iterator((e.dstId, e.srcAttr * e.attr)), _ + _)
 
-      // Aggregate them at the receiving vertices (requires a shuffle)
-      val incomingRankContribs = vertices.aggregateUsingIndex[Double](outgoingRankContribs, _ + _)
-
-      // Apply them to get the new ranks, using join to preserve ranks of vertices that didn't
-      // receive a message. Does not require a shuffle or any hash lookups. It does call
+      // Apply the final rank updates to get the new ranks, using join to preserve ranks of vertices
+      // that didn't receive a message. Does not require a shuffle or any hash lookups. It does call
       // RVV#updateVertices, but this doesn't need data movement.
-      rankGraph = rankGraph.joinVertices(incomingRankContribs) { (id, rank, incomingContrib) =>
-        resetProb + (1.0 - resetProb) * incomingContrib }
+      rankGraph = rankGraph.joinVertices(rankUpdates) { (id, rank, rankUpdate) =>
+        resetProb + (1.0 - resetProb) * rankUpdate }
 
-      rankGraph.vertices.foreachPartition(x => {})
-      logInfo(s"staticPageRank finished iteration $iteration.")
+      // rankGraph.vertices.foreachPartition(x => {})
+      // logInfo(s"staticPageRank finished iteration $iteration.")
 
       iteration += 1
     }
