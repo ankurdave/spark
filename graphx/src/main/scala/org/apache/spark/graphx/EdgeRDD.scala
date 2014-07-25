@@ -47,13 +47,9 @@ class EdgeRDD[@specialized ED: ClassTag, VD: ClassTag](
    * If `partitionsRDD` already has a partitioner, use it. Otherwise assume that the
    * [[PartitionID]]s in `partitionsRDD` correspond to the actual partitions and create a new
    * partitioner that allows co-partitioning with `partitionsRDD`.
-   *
-   * However, if we are partitioned by source, partitionsRDD.partitioner will be the vertex
-   * partitioner, which is not what we want, so we always create a new partitioner.
    */
   override val partitioner =
-    if (partitionedBy == PartitionedBy.Source) Some(new HashPartitioner(partitionsRDD.partitions.size))
-    else partitionsRDD.partitioner.orElse(Some(Partitioner.defaultPartitioner(partitionsRDD)))
+    partitionsRDD.partitioner.orElse(Some(Partitioner.defaultPartitioner(partitionsRDD)))
 
   override def compute(part: Partition, context: TaskContext): Iterator[Edge[ED]] = {
     val p = firstParent[(PartitionID, EdgePartition[ED, VD])].iterator(part, context)

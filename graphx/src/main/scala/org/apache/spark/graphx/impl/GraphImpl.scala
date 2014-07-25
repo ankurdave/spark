@@ -111,7 +111,8 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         }
         val edgePartition = builder.toEdgePartition
         Iterator((pid, edgePartition))
-      }, preservesPartitioning = true)).cache().markPartitionedBy(PartitionedBy.Source)
+      }, preservesPartitioning = true).partitionBy(new HashPartitioner(vertices.partitions.length)))
+      .cache().markPartitionedBy(PartitionedBy.Source)
     GraphImpl.fromExistingRDDs(vertices.withEdges(newEdges), newEdges)
   }
 
