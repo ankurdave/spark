@@ -103,7 +103,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     val newEdges = edges.withPartitionsRDD(edges.map { e =>
       (e.srcId, (e.dstId, e.attr))
     }
-      .partitionBy(vertices.partitioner)
+      .partitionBy(vertices.partitioner.get)
       .mapPartitionsWithIndex( { (pid, iter) =>
         val builder = new EdgePartitionBuilder[ED, VD]()(edTag, vdTag)
         iter.foreach { message =>
@@ -129,7 +129,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       val newVerts = vertices.mapVertexPartitions(_.map(f)).cache()
       val changedVerts = vertices.asInstanceOf[VertexRDD[VD2]].diff(newVerts)
       val newReplicatedVertexView = replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2, ED]]
-        .updateVertices(changedVerts)
+        .updateVertices(newVerts, changedVerts)
       new GraphImpl(newVerts, newReplicatedVertexView)
     } else {
       // The map does not preserve type, so we must re-replicate all vertices
@@ -260,7 +260,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       val newVerts = vertices.leftJoin(other)(updateF).cache()
       val changedVerts = vertices.asInstanceOf[VertexRDD[VD2]].diff(newVerts)
       val newReplicatedVertexView = replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2, ED]]
-        .updateVertices(changedVerts)
+        .updateVertices(newVerts, changedVerts)
       new GraphImpl(newVerts, newReplicatedVertexView)
     } else {
       // updateF does not preserve type, so we must re-replicate all vertices
@@ -279,9 +279,10 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     // - outerJoinVertices
     // - anything else that calls replicatedVertexView.{updateVertices, upgrade}(true, false)
 
+    vertices.cache()
     var rankGraph = this
       // Associate the degree with each vertex
-      .outerJoinVertices(graph.outDegrees /* no shuffle */) { (vid, vdata, deg) => deg.getOrElse(0) } /* no shuffle */
+      .outerJoinVertices(this.outDegrees /* no shuffle */) { (vid, vdata, deg) => deg.getOrElse(0) } /* no shuffle */
       // Set the weight on the edges based on the degree
       .mapTriplets( e => 1.0 / e.srcAttr )
       // Set the vertex attributes to the initial pagerank values
@@ -292,15 +293,15 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       rankGraph.cache()
 
       // Compute the outgoing rank contributions of each vertex (doesn't require a shuffle)
-      val outgoingRankContribs = rankGraph.mapTriplets(e => e.srcAttr * e.attr)
+      val outgoingRankContribs = rankGraph.mapTriplets(e => e.srcAttr * e.attr).edges.map(e => (e.dstId, e.attr))
 
       // Aggregate them at the receiving vertices (requires a shuffle)
-      val incomingRankContribs = vertices.aggregateUsingIndex(outgoingRankContribs, _ + _)
+      val incomingRankContribs = vertices.aggregateUsingIndex[Double](outgoingRankContribs, _ + _)
 
       // Apply them to get the new ranks, using join to preserve ranks of vertices that didn't
       // receive a message. Does not require a shuffle or any hash lookups. It does call
       // RVV#updateVertices, but this doesn't need data movement.
-      rankGraph = rankGraph.outerJoinVertices(incomingRankContribs) { (id, rank, incomingContrib) =>
+      rankGraph = rankGraph.joinVertices(incomingRankContribs) { (id, rank, incomingContrib) =>
         resetProb + (1.0 - resetProb) * incomingContrib }
 
       iteration += 1

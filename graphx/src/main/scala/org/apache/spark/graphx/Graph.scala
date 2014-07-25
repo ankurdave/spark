@@ -121,6 +121,8 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
    */
   def partitionBy(partitionStrategy: PartitionStrategy, numPartitions: Int): Graph[VD, ED]
 
+  def partitionBySource(): Graph[VD, ED]
+
   /**
    * Transforms each vertex attribute in the graph using the map function.
    *
@@ -353,6 +355,8 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
   def outerJoinVertices[U: ClassTag, VD2: ClassTag](other: RDD[(VertexId, U)])
       (mapFunc: (VertexId, VD, Option[U]) => VD2)(implicit eq: VD =:= VD2 = null)
     : Graph[VD2, ED]
+
+  def staticPageRank(numIter: Int, resetProb: Double = 0.15): Graph[Double, Double]
 
   /**
    * The associated [[GraphOps]] object.

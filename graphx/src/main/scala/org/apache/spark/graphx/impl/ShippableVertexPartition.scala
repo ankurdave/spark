@@ -130,6 +130,8 @@ class ShippableVertexPartition[VD: ClassTag](
       (pid, vids.trim().array)
     }
   }
+
+  def toVertexPartition: VertexPartition[VD] = new VertexPartition(index, values, mask)
 }
 
 private[graphx] class ShippableVertexPartitionOps[VD: ClassTag](self: ShippableVertexPartition[VD])

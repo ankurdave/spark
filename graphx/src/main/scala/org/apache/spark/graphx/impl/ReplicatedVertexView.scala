@@ -67,17 +67,17 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
       if (shipSrc && !shipDst && edges.isPartitionedBySource(vertices)) {
         // The edges are partitioned by source vertex and they only need the source vertex
         // attributes, so we can simply zip with `vertices`
-        edges = edges.partitionsRDD.zipPartitions(vertices.partitionsRDD) {
+        edges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(vertices.partitionsRDD) {
           (ePartIter, vPartIter) => ePartIter.map {
             case (pid, edgePartition) =>
               if (vPartIter.hasNext) {
-                val vertexPartition = vPartIter.next()
+                val vertexPartition = vPartIter.next().toVertexPartition
                 (pid, edgePartition.withVertices(vertexPartition))
               } else {
                 throw new Exception(s"ReplicatedVertexView: edge partition $pid has no corresponding vertex partition")
               }
           }
-        }
+        })
       } else {
         // We have to ship all vertices to the edge partitions
         val shippedVerts: RDD[(Int, VertexAttributeBlock[VD])] =
@@ -122,20 +122,20 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
    * position(s) specified by the attribute shipping level.
    */
   def updateVertices(updatedVertices: VertexRDD[VD], updates: VertexRDD[VD]): ReplicatedVertexView[VD, ED] = {
-    if (!includeDst && edges.isPartitionedBySource(vertices)) {
+    if (!hasDstId && edges.isPartitionedBySource(updatedVertices)) {
       // The edges are partitioned by source vertex and they only need the source vertex attributes,
       // so we can simply zip with `updatedVertices`
-      this.withEdges(edges.partitionsRDD.zipPartitions(updatedVertices.partitionsRDD) {
+      this.withEdges(edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(updatedVertices.partitionsRDD) {
         (ePartIter, vPartIter) => ePartIter.map {
           case (pid, edgePartition) =>
             if (vPartIter.hasNext) {
-              val vertexPartition = vPartIter.next()
+              val vertexPartition = vPartIter.next().toVertexPartition
               (pid, edgePartition.withVertices(vertexPartition))
             } else {
               throw new Exception(s"ReplicatedVertexView: edge partition $pid has no corresponding vertex partition")
             }
         }
-      })
+      }))
     } else {
       // We have to ship the updates and apply them to the edge partitions
       val shippedVerts = updates.shipVertexAttributes(hasSrcId, hasDstId)
