@@ -287,7 +287,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       // Set the weight on the edges based on the degree
       .mapTriplets( e => 1.0 / e.srcAttr )
       // Set the vertex attributes to the initial pagerank values
-      .mapVertices( (id, attr) => 1.0 )
+      .mapVertices( (id, attr) => resetProb )
 
     var iteration = 0
     while (iteration < numIter) {
