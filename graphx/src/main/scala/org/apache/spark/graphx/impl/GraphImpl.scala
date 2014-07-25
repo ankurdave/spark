@@ -291,6 +291,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       .mapVertices( (id, attr) => resetProb )
 
     var iteration = 0
+    var prevRankGraph: Graph[Double, Double] = null
     while (iteration < numIter) {
       rankGraph.cache()
 
@@ -302,11 +303,14 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       // Apply the final rank updates to get the new ranks, using join to preserve ranks of vertices
       // that didn't receive a message. Does not require a shuffle or any hash lookups. It does call
       // RVV#updateVertices, but this doesn't need data movement.
+      prevRankGraph = rankGraph
       rankGraph = rankGraph.joinVertices(rankUpdates) { (id, rank, rankUpdate) =>
-        resetProb + (1.0 - resetProb) * rankUpdate }
+        resetProb + (1.0 - resetProb) * rankUpdate }.cache()
 
-      // rankGraph.vertices.foreachPartition(x => {})
-      // logInfo(s"staticPageRank finished iteration $iteration.")
+      rankGraph.edges.foreachPartition(x => {}) // also materializes rankGraph.vertices
+      logInfo(s"staticPageRank finished iteration $iteration.")
+      prevRankGraph.vertices.unpersist(false)
+      prevRankGraph.edges.unpersist(false)
 
       iteration += 1
     }
