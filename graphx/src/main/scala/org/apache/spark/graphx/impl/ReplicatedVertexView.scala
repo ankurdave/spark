@@ -67,13 +67,12 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
       if (shipSrc && !includeDst && edges.isPartitionedBySource(vertices)) {
         // The edges are partitioned by source vertex and they only need the source vertex
         // attributes, so we can simply zip with `vertices`
-        val vdTag = classTag[VD]
         edges = edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(vertices.partitionsRDD) {
           (ePartIter, vPartIter) => ePartIter.map {
             case (pid, edgePartition) =>
               if (vPartIter.hasNext) {
-                val vertexPartition = vPartIter.next().toVertexPartition
-                (pid, edgePartition.withVertices(vertexPartition)(vdTag))
+                val vertexPartition = vPartIter.next()
+                (pid, edgePartition.updateVertices(vertexPartition.iterator))
               } else {
                 throw new Exception(s"ReplicatedVertexView: edge partition $pid has no corresponding vertex partition")
               }
@@ -127,13 +126,12 @@ class ReplicatedVertexView[VD: ClassTag, ED: ClassTag](
       if (hasSrcId && !hasDstId && edges.isPartitionedBySource(updatedVertices)) {
         // The edges are partitioned by source vertex and they only need the source vertex attributes,
         // so we can simply zip with `updatedVertices`
-        val vdTag = classTag[VD]
         this.withEdges(edges.withPartitionsRDD(edges.partitionsRDD.zipPartitions(updatedVertices.partitionsRDD) {
           (ePartIter, vPartIter) => ePartIter.map {
             case (pid, edgePartition) =>
               if (vPartIter.hasNext) {
-                val vertexPartition = vPartIter.next().toVertexPartition
-                (pid, edgePartition.withVertices(vertexPartition)(vdTag))
+                val vertexPartition = vPartIter.next()
+                (pid, edgePartition.updateVertices(vertexPartition.iterator))
               } else {
                 throw new Exception(s"ReplicatedVertexView: edge partition $pid has no corresponding vertex partition")
               }
