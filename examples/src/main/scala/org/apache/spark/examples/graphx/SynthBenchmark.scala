@@ -17,6 +17,7 @@
 
 package org.apache.spark.examples.graphx
 
+import org.apache.spark.Logging
 import org.apache.spark.SparkContext._
 import org.apache.spark.graphx.PartitionStrategy
 import org.apache.spark.{SparkContext, SparkConf}
@@ -28,7 +29,7 @@ import java.io.{PrintWriter, FileOutputStream}
  * synthetic log-normal graphs.  The intent of this code is to enable users to
  * profile the GraphX system without access to large graph datasets.
  */
-object SynthBenchmark {
+object SynthBenchmark extends Logging {
 
   /**
    * To run this program use the following:
@@ -75,6 +76,11 @@ object SynthBenchmark {
       case (opt, _) => throw new IllegalArgumentException("Invalid option: " + opt)
     }
 
+    if (app == "pagerank" && partitionStrategy.nonEmpty) {
+      logWarning(s"Ignoring -partStrategy option. PageRank only supports source vertex partitioning.")
+      partitionStrategy = None
+    }
+
     val conf = new SparkConf()
       .setAppName(s"GraphX Synth Benchmark (nverts = $numVertices, app = $app)")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
@@ -87,7 +93,9 @@ object SynthBenchmark {
     val unpartitionedGraph = GraphGenerators.logNormalGraph(sc, numVertices,
       numEPart.getOrElse(sc.defaultParallelism), mu, sigma)
     // Repartition the graph
-    val graph = partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
+    val graph =
+      if (app == "pagerank") unpartitionedGraph.partitionBySource().cache()
+      else partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
 
     var startTime = System.currentTimeMillis()
     val numEdges = graph.edges.count()
