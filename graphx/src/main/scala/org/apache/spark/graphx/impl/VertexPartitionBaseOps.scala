@@ -215,6 +215,8 @@ private[graphx] abstract class VertexPartitionBaseOps
           newMask.set(pos)
           newValues(pos) = vdata
         }
+      } else {
+        throw new Exception(s"aggregateUsingIndex: Dropping $product")
       }
     }
     this.withValues(newValues).withMask(newMask)

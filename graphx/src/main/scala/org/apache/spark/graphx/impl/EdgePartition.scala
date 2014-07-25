@@ -55,7 +55,11 @@ class EdgePartition[
     new EdgePartition(srcIds, dstIds, data_, index, vertices, activeSet)
   }
 
-  /** Return a new `EdgePartition` with the specified vertex partition. */
+  /**
+   * Return a new `EdgePartition` with the specified vertex partition. Note that the specified
+   * vertex partition must contain all vertex ids from `srcIds` and `dstIds`, though not necessarily
+   * valid attributes for those vertex ids.
+   */
   def withVertices[VD2: ClassTag](
       vertices_ : VertexPartition[VD2]): EdgePartition[ED, VD2] = {
     new EdgePartition(srcIds, dstIds, data, index, vertices_, activeSet)
