@@ -119,6 +119,10 @@ object SynthBenchmark extends Logging {
       println("Running PageRank")
       val totalPR = graph.staticPageRank(niter).vertices.map(_._2).sum()
       println(s"Total PageRank = $totalPR")
+    } else if (app == "pregelPagerank") {
+      println("Running Pregel PageRank")
+      val totalPR = graph.pregelStaticPageRank(niter).vertices.map(_._2).sum()
+      println(s"Total PageRank = $totalPR")
     } else if (app == "cc") {
       println("Running Connected Components")
       val numComponents = graph.connectedComponents.vertices.map(_._2).distinct()
