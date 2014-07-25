@@ -20,6 +20,7 @@ package org.apache.spark.graphx.impl
 import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark.HashPartitioner
+import org.apache.spark.Logging
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
 import org.apache.spark.storage.StorageLevel
@@ -39,7 +40,7 @@ import org.apache.spark.graphx.util.BytecodeUtils
 class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     @transient val vertices: VertexRDD[VD],
     @transient val replicatedVertexView: ReplicatedVertexView[VD, ED])
-  extends Graph[VD, ED] with Serializable {
+  extends Graph[VD, ED] with Serializable with Logging {
 
   /** Default constructor is provided to support serialization */
   protected def this() = this(null, null)
@@ -304,6 +305,9 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       // RVV#updateVertices, but this doesn't need data movement.
       rankGraph = rankGraph.joinVertices(incomingRankContribs) { (id, rank, incomingContrib) =>
         resetProb + (1.0 - resetProb) * incomingContrib }
+
+      rankGraph.vertices.foreachPartition(x => {})
+      logInfo(s"staticPageRank finished iteration $iteration.")
 
       iteration += 1
     }
