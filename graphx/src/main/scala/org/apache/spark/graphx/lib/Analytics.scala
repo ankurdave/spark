@@ -73,7 +73,7 @@ object Analytics extends Logging {
       .map(StorageLevel.fromString(_)).getOrElse(StorageLevel.MEMORY_ONLY)
 
     taskType match {
-      case "pagerank" =>
+      case "pagerank" | "pregelPagerank" =>
         val tol = options.remove("tol").map(_.toFloat).getOrElse(0.001F)
         val outFname = options.remove("output").getOrElse("")
         val numIterOpt = options.remove("numIter").map(_.toInt)
@@ -92,12 +92,15 @@ object Analytics extends Logging {
           minEdgePartitions = numEPart,
           edgeStorageLevel = edgeStorageLevel,
           vertexStorageLevel = vertexStorageLevel).cache()
-        val graph = partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_))
+        val graph =
+          if (taskType == "pagerank" && numIterOpt.nonEmpty) unpartitionedGraph.partitionBySource().cache()
+          else partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
 
         println("GRAPHX: Number of vertices " + graph.vertices.count)
         println("GRAPHX: Number of edges " + graph.edges.count)
 
         val pr = (numIterOpt match {
+          case Some(numIter) if taskType == "pagerank" => graph.staticPageRank(numIter)
           case Some(numIter) => PageRank.run(graph, numIter)
           case None => PageRank.runUntilConvergence(graph, tol)
         }).vertices.cache()
