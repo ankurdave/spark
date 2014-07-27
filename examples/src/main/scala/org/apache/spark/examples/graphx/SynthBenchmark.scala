@@ -60,6 +60,7 @@ object SynthBenchmark extends Logging {
     var numVertices = 100000
     var numEPart: Option[Int] = None
     var partitionStrategy: Option[PartitionStrategy] = None
+    var partitionBySource = false
     var mu: Double = 4.0
     var sigma: Double = 1.3
     var degFile: String = ""
@@ -70,15 +71,11 @@ object SynthBenchmark extends Logging {
       case ("nverts", v) => numVertices = v.toInt
       case ("numEPart", v) => numEPart = Some(v.toInt)
       case ("partStrategy", v) => partitionStrategy = Some(PartitionStrategy.fromString(v))
+      case ("partitionBySource", v) => partitionBySource = v.toBoolean
       case ("mu", v) => mu = v.toDouble
       case ("sigma", v) => sigma = v.toDouble
       case ("degFile", v) => degFile = v
       case (opt, _) => throw new IllegalArgumentException("Invalid option: " + opt)
-    }
-
-    if (app == "pagerank" && partitionStrategy.nonEmpty) {
-      logWarning(s"Ignoring -partStrategy option. PageRank only supports source vertex partitioning.")
-      partitionStrategy = None
     }
 
     val conf = new SparkConf()
@@ -94,7 +91,7 @@ object SynthBenchmark extends Logging {
       numEPart.getOrElse(sc.defaultParallelism), mu, sigma)
     // Repartition the graph
     val graph =
-      if (app == "pagerank") unpartitionedGraph.partitionBySource().cache()
+      if (partitionBySource) unpartitionedGraph.partitionBySource().cache()
       else partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
 
     var startTime = System.currentTimeMillis()

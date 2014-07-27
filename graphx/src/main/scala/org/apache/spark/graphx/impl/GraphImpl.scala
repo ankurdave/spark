@@ -272,11 +272,8 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
   }
 
   override def staticPageRank(numIter: Int, resetProb: Double = 0.15): Graph[Double, Double] = {
-    assert(replicatedVertexView.edges.isPartitionedBySource(vertices),
-      "Graph must be partitioned by source vertex to run PageRank. Call Graph#partitionBySource.")
-
-    // Because the graph is partitioned by source and only upgraded to (true, false), the
-    // following operations don't require a shuffle:
+    // If the graph is partitioned by source, the following operations don't require a shuffle
+    // because we only upgrade to (true, false):
     // - mapTriplets(... srcAttr ...)
     // - outerJoinVertices
     // - anything else that calls replicatedVertexView.{updateVertices, upgrade}(true, false)
@@ -284,7 +281,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     vertices.cache()
     var rankGraph = this
       // Associate the degree with each vertex
-      .outerJoinVertices(this.outDegrees /* no shuffle */) { (vid, vdata, deg) => deg.getOrElse(0) } /* no shuffle */
+      .outerJoinVertices(this.outDegrees) { (vid, vdata, deg) => deg.getOrElse(0) }
       // Set the weight on the edges based on the degree
       .mapTriplets( e => 1.0 / e.srcAttr )
       // Set the vertex attributes to the initial pagerank values
@@ -295,14 +292,13 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     while (iteration < numIter) {
       rankGraph.cache()
 
-      // Compute the outgoing rank contributions of each vertex (doesn't require a shuffle because
-      // we only access srcAttr), perform local preaggregation, and do the final aggregation at the
-      // receiving vertices (requires a shuffle)
+      // Compute the outgoing rank contributions of each vertex, perform local preaggregation, and
+      // do the final aggregation at the receiving vertices (requires a shuffle)
       val rankUpdates = rankGraph.mapReduceTriplets[Double](e => Iterator((e.dstId, e.srcAttr * e.attr)), _ + _)
 
       // Apply the final rank updates to get the new ranks, using join to preserve ranks of vertices
-      // that didn't receive a message. Does not require a shuffle or any hash lookups. It does call
-      // RVV#updateVertices, but this doesn't need data movement.
+      // that didn't receive a message. Calls RVV#updateVertices, so it requires a shuffle unless
+      // the graph is partitioned by source.
       prevRankGraph = rankGraph
       rankGraph = rankGraph.joinVertices(rankUpdates) { (id, rank, rankUpdate) =>
         resetProb + (1.0 - resetProb) * rankUpdate }.cache()
