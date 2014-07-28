@@ -67,6 +67,8 @@ object Analytics extends Logging {
     }
     val partitionStrategy: Option[PartitionStrategy] = options.remove("partStrategy")
       .map(pickPartitioner(_))
+    val partitionBySource: Boolean = options.remove("partitionBySource")
+      .map(_.toBoolean).getOrElse(false)
     val edgeStorageLevel = options.remove("edgeStorageLevel")
       .map(StorageLevel.fromString(_)).getOrElse(StorageLevel.MEMORY_ONLY)
     val vertexStorageLevel = options.remove("vertexStorageLevel")
@@ -93,8 +95,10 @@ object Analytics extends Logging {
           edgeStorageLevel = edgeStorageLevel,
           vertexStorageLevel = vertexStorageLevel).cache()
         val graph =
-          if (taskType == "pagerank" && numIterOpt.nonEmpty) unpartitionedGraph.partitionBySource().cache()
-          else partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
+          if (taskType == "pagerank" && numIterOpt.nonEmpty && partitionBySource)
+            unpartitionedGraph.partitionBySource().cache()
+          else
+            partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
 
         println("GRAPHX: Number of vertices " + graph.vertices.count)
         println("GRAPHX: Number of edges " + graph.edges.count)
