@@ -276,8 +276,22 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       }
     }
 
+    def time[A](label: String)(fn: => A): A = {
+      val startTime = System.currentTimeMillis
+      logWarning("Starting %s...".format(label))
+      val result = fn
+      logWarning("Finished %s. Time: %f".format(label, (System.currentTimeMillis - startTime) / 1000.0))
+      result
+    }
+
+    time("map in mrTriplets") {
+      preAgg.count()
+    }
+
     // do the final reduction reusing the index map
-    vertices.aggregateUsingIndex(preAgg, reduceFunc)
+    time("reduce in mrTriplets") {
+      vertices.aggregateUsingIndex(preAgg, reduceFunc)
+    }
   } // end of mapReduceTriplets
 
   override def outerJoinVertices[U: ClassTag, VD2: ClassTag]
