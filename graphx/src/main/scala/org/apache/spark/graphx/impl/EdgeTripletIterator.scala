@@ -48,10 +48,12 @@ class EdgeTripletIterator[VD: ClassTag, ED: ClassTag](
   override def next() = {
     triplet.srcId = edgePartition.srcIds(pos)
     // assert(vmap.containsKey(e.src.id))
-    triplet.srcAttr = vmap(triplet.srcId)
+    val fakeSrcInd = (triplet.srcId * 1125899906842597L) % vertexArray.length
+    triplet.srcAttr = vertexArray(fakeSrcInd)
     triplet.dstId = edgePartition.dstIds(pos)
     // assert(vmap.containsKey(e.dst.id))
-    triplet.dstAttr = vmap(triplet.dstId)
+    val fakeDstInd = (triplet.dstId * 1125899906842597L) % vertexArray.length
+    triplet.dstAttr = vertexArray(fakeDstInd)
     triplet.attr = edgePartition.data(pos)
     pos += 1
     triplet
