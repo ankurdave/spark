@@ -285,12 +285,15 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     }
 
     time("map in mrTriplets") {
-      preAgg.count()
+      preAgg.cache.count()
     }
 
     // do the final reduction reusing the index map
     time("reduce in mrTriplets") {
-      vertices.aggregateUsingIndex(preAgg, reduceFunc)
+      val result = vertices.aggregateUsingIndex(preAgg, reduceFunc)
+      result.count()
+      preAgg.unpersist(false)
+      result
     }
   } // end of mapReduceTriplets
 
