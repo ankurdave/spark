@@ -100,7 +100,7 @@ private[ui] class StagePage(parent: JobProgressUI) {
         Seq("Task Index", "Task ID", "Status", "Locality Level", "Executor", "Launch Time") ++
         Seq("Duration", "GC Time", "Result Ser Time") ++
         {if (hasShuffleRead) Seq("Shuffle Read")  else Nil} ++
-        {if (hasShuffleWrite) Seq("Write Time", "Shuffle Write") else Nil} ++
+        {if (hasShuffleWrite) Seq("Write Time", "Write Time With Ser", "Shuffle Write") else Nil} ++
         {if (hasBytesSpilled) Seq("Shuffle Spill (Memory)", "Shuffle Spill (Disk)") else Nil} ++
         Seq("Errors")
 
