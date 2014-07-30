@@ -67,6 +67,8 @@ private[spark] abstract class BlockObjectWriter(val blockId: BlockId) {
    */
   def timeWriting(): Long
 
+  def timeWritingAndSerializing(): Long
+
   /**
    * Number of bytes written so far
    */
@@ -103,23 +105,43 @@ private[spark] class DiskBlockObjectWriter(
     override def flush() = out.flush()
   }
 
+  /** Intercepts write calls and tracks total time spent serializing. Not thread safe. */
+  private class TimeTrackingSerializationStream(out: SerializationStream) extends SerializationStream {
+    def timeWriting = _timeWriting
+    private var _timeWriting = 0L
+
+    private def callWithTiming(f: => Unit) = {
+      val start = System.nanoTime()
+      f
+      _timeWriting += (System.nanoTime() - start)
+    }
+
+    override def writeObject[T](t: T) = {
+      callWithTiming(out.writeObject(t))
+      this
+    }
+    override def close() = out.close()
+    override def flush() = out.flush()
+  }
+
   /** The file channel, used for repositioning / truncating the file. */
   private var channel: FileChannel = null
   private var bs: OutputStream = null
   private var fos: ByteArrayOutputStream = null
   private var ts: TimeTrackingOutputStream = null
-  private var objOut: SerializationStream = null
+  private var objOut: TimeTrackingSerializationStream = null
   private val initialPosition = file.length()
   private var lastValidPosition = initialPosition
   private var initialized = false
   private var _timeWriting = 0L
+  private var _timeWritingAndSerializing = 0L
 
   override def open(): BlockObjectWriter = {
     fos = new ByteArrayOutputStream()
     ts = new TimeTrackingOutputStream(fos)
     lastValidPosition = initialPosition
     bs = compressStream(new FastBufferedOutputStream(ts, bufferSize))
-    objOut = serializer.newInstance().serializeStream(bs)
+    objOut = new TimeTrackingSerializationStream(serializer.newInstance().serializeStream(bs))
     initialized = true
     this
   }
@@ -133,6 +155,7 @@ private[spark] class DiskBlockObjectWriter(
       objOut.close()
 
       _timeWriting += ts.timeWriting
+      _timeWritingAndSerializing += objOut.timeWriting
 
       channel = null
       bs = null
@@ -183,6 +206,9 @@ private[spark] class DiskBlockObjectWriter(
 
   // Only valid if called after close()
   override def timeWriting() = _timeWriting
+
+    // Only valid if called after close()
+  override def timeWritingAndSerializing() = _timeWritingAndSerializing
 
   // Only valid if called after commit()
   override def bytesWritten: Long = {

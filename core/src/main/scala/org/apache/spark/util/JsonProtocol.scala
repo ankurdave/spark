@@ -223,7 +223,8 @@ private[spark] object JsonProtocol {
 
   def shuffleWriteMetricsToJson(shuffleWriteMetrics: ShuffleWriteMetrics): JValue = {
     ("Shuffle Bytes Written" -> shuffleWriteMetrics.shuffleBytesWritten) ~
-    ("Shuffle Write Time" -> shuffleWriteMetrics.shuffleWriteTime)
+    ("Shuffle Write Time" -> shuffleWriteMetrics.shuffleWriteTime) ~
+    ("Shuffle Write Time With Serialization" -> shuffleWriteMetrics.shuffleWriteTimeWithSerialization)
   }
 
   def taskEndReasonToJson(taskEndReason: TaskEndReason): JValue = {

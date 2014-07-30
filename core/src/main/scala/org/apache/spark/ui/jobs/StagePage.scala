@@ -238,6 +238,12 @@ private[ui] class StagePage(parent: JobProgressUI) {
         if (ms == 0) "" else parent.formatDuration(ms)
       }.getOrElse("")
 
+      val maybeWriteTimeWithSerialization = metrics.flatMap(_.shuffleWriteMetrics).map(_.shuffleWriteTimeWithSerialization)
+      val writeTimeWithSerializationSortable = maybeWriteTimeWithSerialization.map(_.toString).getOrElse("")
+      val writeTimeWithSerializationReadable = maybeWriteTimeWithSerialization.map( t => t / (1000 * 1000)).map { ms =>
+        if (ms == 0) "" else parent.formatDuration(ms)
+      }.getOrElse("")
+
       val maybeMemoryBytesSpilled = metrics.map(_.memoryBytesSpilled)
       val memoryBytesSpilledSortable = maybeMemoryBytesSpilled.map(_.toString).getOrElse("")
       val memoryBytesSpilledReadable =
@@ -271,6 +277,9 @@ private[ui] class StagePage(parent: JobProgressUI) {
         {if (shuffleWrite) {
            <td sorttable_customkey={writeTimeSortable}>
              {writeTimeReadable}
+           </td>
+           <td sorttable_customkey={writeTimeWithSerializationSortable}>
+             {writeTimeWithSerializationReadable}
            </td>
            <td sorttable_customkey={shuffleWriteSortable}>
              {shuffleWriteReadable}

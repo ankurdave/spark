@@ -126,4 +126,6 @@ class ShuffleWriteMetrics extends Serializable {
    * Time the task spent blocking on writes to disk or buffer cache, in nanoseconds
    */
   var shuffleWriteTime: Long = _
+
+  var shuffleWriteTimeWithSerialization: Long = _
 }
