@@ -189,7 +189,7 @@ private object ReplicatedVertexView {
           val vid = vidsCandidate(i)
           if (vertexPart.isDefined(vid)) {
             vids += vid
-            attrs += vertexPart(vid)
+            attrs += vertexPart(vid) // TODO: avoid hash lookup
           }
           i += 1
         }
