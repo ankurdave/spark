@@ -269,6 +269,8 @@ class VertexRDD[@specialized VD: ClassTag](
     }
   }
 
+  private var aggregateUsingIndexShuffled: AnyRef = null
+
   /**
    * Aggregates vertices in `messages` that have the same ids using `reduceFunc`, returning a
    * VertexRDD co-indexed with `this`.
@@ -282,7 +284,10 @@ class VertexRDD[@specialized VD: ClassTag](
    */
   def aggregateUsingIndex[VD2: ClassTag](
       messages: RDD[(VertexId, VD2)], reduceFunc: (VD2, VD2) => VD2): VertexRDD[VD2] = {
-    val shuffled = MsgRDDFunctions.partitionForAggregation(messages, this.partitioner.get)
+    if (aggregateUsingIndexShuffled == null) {
+      aggregateUsingIndexShuffled = MsgRDDFunctions.partitionForAggregation(messages, this.partitioner.get)
+    }
+    val shuffled = aggregateUsingIndexShuffled.asInstanceOf[org.apache.spark.rdd.ShuffledRDD[VertexId, VD2, (VertexId, VD2)]]
     val parts = partitionsRDD.zipPartitions(shuffled, true) { (thisIter, msgIter) =>
       val vertexPartition: VertexPartition[VD] = thisIter.next()
       Iterator(vertexPartition.aggregateUsingIndex(msgIter, reduceFunc))

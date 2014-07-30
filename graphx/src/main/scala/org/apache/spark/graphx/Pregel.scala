@@ -148,11 +148,12 @@ object Pregel extends Logging {
 
       // Update the graph with the new vertices.
       prevG = g
-      g =
+      // g =
         time("outerJoinVertices") {
           val result = g.outerJoinVertices(newVerts, destructive = i > 0) { (vid, old, newOpt) => newOpt.getOrElse(old) }
           result.cache()
-          result.mapTriplets(e => { e.srcAttr; 1 }).edges.foreachPartition(x => {})
+          result.vertices.foreachPartition(x => {})
+          // result.mapTriplets(e => { e.srcAttr; 1 }).edges.foreachPartition(x => {})
           result
         }
 
@@ -162,7 +163,7 @@ object Pregel extends Logging {
       // allowing us to uncache the previous iteration.
       messages =
         time("mrTriplets") {
-          val result = g.mapReduceTriplets(sendMsg, mergeMsg, Some((newVerts, activeDirection))).cache()
+          val result = g.mapReduceTriplets(sendMsg, mergeMsg/*, Some((newVerts, activeDirection))*/).cache()
           result.foreachPartition(x => {})
           result
         }
