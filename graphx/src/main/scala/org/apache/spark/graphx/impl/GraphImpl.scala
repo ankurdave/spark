@@ -269,7 +269,9 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
           mapFunc(et)
         }
         // Note: This doesn't allow users to send messages to arbitrary vertices.
-        vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
+        // vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
+        mapOutputs.foreach(x => {})
+        vPart.iterator.map { case (id, v) => (id, null.asInstanceOf[A]) }
       } else {
         logError("preAgg in mapReduceTriplets tried to iterate over empty partition.")
         Iterator.empty
