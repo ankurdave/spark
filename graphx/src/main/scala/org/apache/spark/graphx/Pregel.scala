@@ -109,26 +109,28 @@ object Pregel extends Logging {
    * @return the resulting graph at the end of the computation
    *
    */
-  def apply[VD: ClassTag, ED: ClassTag, A: ClassTag]
+  def runWithIterationNumber[VD: ClassTag, ED: ClassTag, A: ClassTag]
      (graph: Graph[VD, ED],
       initialMsg: A,
       maxIterations: Int = Int.MaxValue,
       activeDirection: EdgeDirection = EdgeDirection.Either)
-     (vprog: (VertexId, VD, A) => VD,
-      sendMsg: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+     (vprog: (Int, VertexId, VD, A) => VD,
+      sendMsg: (Int, EdgeTriplet[VD, ED]) => Iterator[(VertexId, A)],
       mergeMsg: (A, A) => A)
     : Graph[VD, ED] =
   {
-    var g = graph.mapVertices((vid, vdata) => vprog(vid, vdata, initialMsg)).cache()
+    var g = graph.mapVertices((vid, vdata) => vprog(0, vid, vdata, initialMsg)).cache()
     // compute the messages
-    var messages = g.mapReduceTriplets(sendMsg, mergeMsg)
+    var messages = g.mapReduceTriplets(e => sendMsg(0, e), mergeMsg)
     var activeMessages = messages.count()
     // Loop
     var prevG: Graph[VD, ED] = null
-    var i = 0
-    while (activeMessages > 0 && i < maxIterations) {
+    var i = 1
+    while (activeMessages > 0 && i <= maxIterations) {
       // Receive the messages. Vertices that didn't get any messages do not appear in newVerts.
-      val newVerts = g.vertices.innerJoin(messages)(vprog).cache()
+      val newVerts = g.vertices.innerJoin(messages) {
+        (id, attr, msg) => vprog(i, id, attr, msg)
+      }.cache()
       // Update the graph with the new vertices.
       prevG = g
       g = g.outerJoinVertices(newVerts) { (vid, old, newOpt) => newOpt.getOrElse(old) }
@@ -138,7 +140,8 @@ object Pregel extends Logging {
       // Send new messages. Vertices that didn't get any messages don't appear in newVerts, so don't
       // get to send messages. We must cache messages so it can be materialized on the next line,
       // allowing us to uncache the previous iteration.
-      messages = g.mapReduceTriplets(sendMsg, mergeMsg, Some((newVerts, activeDirection))).cache()
+      messages = g.mapReduceTriplets(
+        e => sendMsg(i, e), mergeMsg, Some((newVerts, activeDirection))).cache()
       // The call to count() materializes `messages`, `newVerts`, and the vertices of `g`. This
       // hides oldMessages (depended on by newVerts), newVerts (depended on by messages), and the
       // vertices of prevG (depended on by newVerts, oldMessages, and the vertices of g).
@@ -158,4 +161,17 @@ object Pregel extends Logging {
     g
   } // end of apply
 
-} // end of class Pregel
+  def apply[VD: ClassTag, ED: ClassTag, A: ClassTag]
+     (graph: Graph[VD, ED],
+      initialMsg: A,
+      maxIterations: Int = Int.MaxValue,
+      activeDirection: EdgeDirection = EdgeDirection.Either)
+     (vprog: (VertexId, VD, A) => VD,
+      sendMsg: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+      mergeMsg: (A, A) => A): Graph[VD, ED] = {
+    runWithIterationNumber(graph, initialMsg, maxIterations, activeDirection)(
+      (iteration, id, attr, msg) => vprog(id, attr, msg),
+      (iteration, e) => sendMsg(e),
+      mergeMsg)
+  }
+}// end of class Pregel
