@@ -258,15 +258,34 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
         // Scan edges and run the map function
         val et = new EdgeTriplet[VD, ED]
-        val mapOutputs = edgeIter.flatMap { e =>
-          et.set(e)
-          if (mapUsesSrcAttr) {
-            et.srcAttr = vPart(e.srcId)
+        val mapOutputs = new Iterator[(VertexId, A)] {
+          private[this] var hashLookupTime = 0L
+          private[this] var mapFuncTime = 0L
+          private[this] val iter = edgeIter.flatMap { e =>
+            et.set(e)
+            if (mapUsesSrcAttr) {
+              val start = System.nanoTime()
+              et.srcAttr = vPart(e.srcId)
+              hashLookupTime += System.nanoTime() - start
+            }
+            if (mapUsesDstAttr) {
+              val start = System.nanoTime()
+              et.dstAttr = vPart(e.dstId)
+              hashLookupTime += System.nanoTime() - start
+            }
+            val start = System.nanoTime()
+            val result = mapFunc(et)
+            mapFuncTime += System.nanoTime() - start
+            result
           }
-          if (mapUsesDstAttr) {
-            et.dstAttr = vPart(e.dstId)
+          override def hasNext = iter.hasNext
+          override def next() = {
+            val result = iter.next()
+            if (!iter.hasNext) {
+              logInfo(s"map on edge partition $ePid spent $hashLookupTime ns in hash lookup, $mapFuncTime ns in mapFunc")
+            }
+            result
           }
-          mapFunc(et)
         }
         // Note: This doesn't allow users to send messages to arbitrary vertices.
         vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
