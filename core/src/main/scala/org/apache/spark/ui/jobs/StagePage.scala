@@ -100,7 +100,7 @@ private[ui] class StagePage(parent: JobProgressTab) extends WebUIPage("stage") {
           "Index", "ID", "Attempt", "Status", "Locality Level", "Executor",
           "Launch Time", "Duration", "GC Time") ++
         {if (hasInput) Seq("Input") else Nil} ++
-        {if (hasShuffleRead) Seq("Shuffle Read")  else Nil} ++
+        {if (hasShuffleRead) Seq("Shuffle Read", "Shuffle Fetch Wait")  else Nil} ++
         {if (hasShuffleWrite) Seq("Write Time", "Shuffle Write") else Nil} ++
         {if (hasBytesSpilled) Seq("Shuffle Spill (Memory)", "Shuffle Spill (Disk)") else Nil} ++
         Seq("Errors")
@@ -162,6 +162,8 @@ private[ui] class StagePage(parent: JobProgressTab) extends WebUIPage("stage") {
 
           def getQuantileCols(data: Seq[Double]) =
             Distribution(data).get.getQuantiles().map(d => <td>{Utils.bytesToString(d.toLong)}</td>)
+          def getQuantileColsTime(data: Seq[Double]) =
+            Distribution(data).get.getQuantiles().map(d => <td>parent.formatDuration(d.toLong)</td>)
 
           val inputSizes = validTasks.map { case TaskUIData(_, metrics, _) =>
             metrics.get.inputMetrics.map(_.bytesRead).getOrElse(0L).toDouble
@@ -173,6 +175,12 @@ private[ui] class StagePage(parent: JobProgressTab) extends WebUIPage("stage") {
           }
           val shuffleReadQuantiles = <td>Shuffle Read (Remote)</td> +:
             getQuantileCols(shuffleReadSizes)
+
+          val shuffleFetchWaitTimes = validTasks.map { case TaskUIData(_, metrics, _) =>
+            metrics.get.shuffleReadMetrics.map(_.fetchWaitTime.toDouble).getOrElse(0.0)
+          }
+          val shuffleFetchWaitQuantiles = <td>Shuffle Fetch Wait</td> +:
+            getQuantileColsTime(shuffleFetchWaitTimes)
 
           val shuffleWriteSizes = validTasks.map { case TaskUIData(_, metrics, _) =>
             metrics.get.shuffleWriteMetrics.map(_.shuffleBytesWritten).getOrElse(0L).toDouble
@@ -198,6 +206,7 @@ private[ui] class StagePage(parent: JobProgressTab) extends WebUIPage("stage") {
             schedulerDelayQuantiles,
             if (hasInput) inputQuantiles else Nil,
             if (hasShuffleRead) shuffleReadQuantiles else Nil,
+            if (hasShuffleRead) shuffleFetchWaitQuantiles else Nil,
             if (hasShuffleWrite) shuffleWriteQuantiles else Nil,
             if (hasBytesSpilled) memoryBytesSpilledQuantiles else Nil,
             if (hasBytesSpilled) diskBytesSpilledQuantiles else Nil)
@@ -242,6 +251,12 @@ private[ui] class StagePage(parent: JobProgressTab) extends WebUIPage("stage") {
       val maybeShuffleRead = metrics.flatMap(_.shuffleReadMetrics).map(_.remoteBytesRead)
       val shuffleReadSortable = maybeShuffleRead.map(_.toString).getOrElse("")
       val shuffleReadReadable = maybeShuffleRead.map(Utils.bytesToString).getOrElse("")
+
+      val maybeShuffleFetchWaitTime = metrics.flatMap(_.shuffleReadMetrics).map(_.fetchWaitTime)
+      val shuffleFetchWaitTimeSortable = maybeShuffleFetchWaitTime.map(_.toString).getOrElse("")
+      val shuffleFetchWaitTimeReadable = maybeShuffleFetchWaitTime.map { ms =>
+        if (ms == 0) "" else UIUtils.formatDuration(ms)
+      }.getOrElse("")
 
       val maybeShuffleWrite =
         metrics.flatMap(_.shuffleWriteMetrics).map(_.shuffleBytesWritten)
@@ -293,6 +308,9 @@ private[ui] class StagePage(parent: JobProgressTab) extends WebUIPage("stage") {
         {if (hasShuffleRead) {
            <td sorttable_customkey={shuffleReadSortable}>
              {shuffleReadReadable}
+           </td>
+           <td sorttable_customkey={shuffleFetchWaitTimeSortable}>
+             {shuffleFetchWaitTimeReadable}
            </td>
         }}
         {if (hasShuffleWrite) {
