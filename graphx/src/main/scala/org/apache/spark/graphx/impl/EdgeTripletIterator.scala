@@ -48,10 +48,10 @@ class EdgeTripletIterator[VD: ClassTag, ED: ClassTag](
   override def next() = {
     triplet.srcId = edgePartition.srcIds(pos)
     // assert(vmap.containsKey(e.src.id))
-    triplet.srcAttr = vmap(triplet.srcId)
+    triplet.srcAttr = null.asInstanceOf[VD]
     triplet.dstId = edgePartition.dstIds(pos)
     // assert(vmap.containsKey(e.dst.id))
-    triplet.dstAttr = vmap(triplet.dstId)
+    triplet.dstAttr = null.asInstanceOf[VD]
     triplet.attr = edgePartition.data(pos)
     pos += 1
     triplet
