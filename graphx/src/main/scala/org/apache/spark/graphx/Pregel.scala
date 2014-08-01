@@ -121,14 +121,6 @@ object Pregel extends Logging {
       mergeMsg: (A, A) => A)
     : Graph[VD, ED] =
   {
-    def time[A](label: String)(fn: => A): A = {
-      val startTime = System.currentTimeMillis
-      logWarning("Starting %s...".format(label))
-      val result = fn
-      logWarning("Finished %s. Time: %f".format(label, (System.currentTimeMillis - startTime) / 1000.0))
-      result
-    }
-
     var g = graph.mapVertices((vid, vdata) => vprog(vid, vdata, initialMsg)).cache()
     // compute the messages
     var messages = g.mapReduceTriplets(sendMsg, mergeMsg)
@@ -138,46 +130,26 @@ object Pregel extends Logging {
     var i = 0
     logWarning("Starting pregel.")
     while (activeMessages > 0 && i < maxIterations) {
-      val newVerts =
-      time("innerJoin") {
-        // Receive the messages. Vertices that didn't get any messages do not appear in newVerts.
-        val result = g.vertices.innerJoin(messages)(vprog).cache()
-        result.foreachPartition(x => {})
-        result
-      }
+      // Receive the messages. Vertices that didn't get any messages do not appear in newVerts.
+      val newVerts = g.vertices.innerJoin(messages)(vprog).cache()
 
       // Update the graph with the new vertices.
       prevG = g
-      g =
-        time("outerJoinVertices") {
-          val result = g.outerJoinVertices(newVerts, destructive = i > 0) { (vid, old, newOpt) => newOpt.getOrElse(old) }
-          result.cache()
-          result.mapTriplets(e => { e.srcAttr; 1 }).edges.foreachPartition(x => {})
-          result
-        }
+      g = g.outerJoinVertices(newVerts, destructive = i > 0) { (vid, old, newOpt) => newOpt.getOrElse(old) }
 
       val oldMessages = messages
       // Send new messages. Vertices that didn't get any messages don't appear in newVerts, so don't
       // get to send messages. We must cache messages so it can be materialized on the next line,
       // allowing us to uncache the previous iteration.
-      messages =
-        time("mrTriplets") {
-          val result = g.mapReduceTriplets(sendMsg, mergeMsg, Some((newVerts, activeDirection))).cache()
-          result.foreachPartition(x => {})
-          result
-        }
+      messages = g.mapReduceTriplets(sendMsg, mergeMsg, Some((newVerts, activeDirection))).cache()
       // The call to count() materializes `messages`, `newVerts`, and the vertices of `g`. This
       // hides oldMessages (depended on by newVerts), newVerts (depended on by messages), and the
       // vertices of prevG (depended on by newVerts, oldMessages, and the vertices of g).
-      activeMessages = time("count messages") {
-        messages.count()
-      }
+      activeMessages = messages.count()
 
       // Very ugly code to clear the in-memory shuffle data
-      time("remove shuffle stuff") {
-        messages.foreachPartition { iter =>
-          SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
-        }
+      messages.foreachPartition { iter =>
+        SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
       }
 
       logWarning("Pregel finished iteration " + i)

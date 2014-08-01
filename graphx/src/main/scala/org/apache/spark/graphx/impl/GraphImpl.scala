@@ -261,6 +261,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         val mapOutputs = new Iterator[(VertexId, A)] {
           private[this] var hashLookupTime = 0L
           private[this] var mapFuncTime = 0L
+          private[this] var i = 0L
           private[this] val iter = edgeIter.flatMap { e =>
             et.set(e)
             if (mapUsesSrcAttr) {
@@ -276,13 +277,14 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
             val start = System.nanoTime()
             val result = mapFunc(et)
             mapFuncTime += System.nanoTime() - start
+            i += 1
             result
           }
           override def hasNext = iter.hasNext
           override def next() = {
             val result = iter.next()
             if (!iter.hasNext) {
-              logInfo(s"map on edge partition $ePid spent $hashLookupTime ns in hash lookup, $mapFuncTime ns in mapFunc")
+              logInfo(s"map on edge partition $ePid spent $hashLookupTime ns in hash lookup, $mapFuncTime ns in mapFunc for $i edges")
             }
             result
           }
@@ -295,25 +297,8 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       }
     }
 
-    def time[A](label: String)(fn: => A): A = {
-      val startTime = System.currentTimeMillis
-      logWarning("Starting %s...".format(label))
-      val result = fn
-      logWarning("Finished %s. Time: %f".format(label, (System.currentTimeMillis - startTime) / 1000.0))
-      result
-    }
-
-    time("map in mrTriplets") {
-      preAgg.cache.count()
-    }
-
     // do the final reduction reusing the index map
-    time("reduce in mrTriplets") {
-      val result = vertices.aggregateUsingIndex(preAgg, reduceFunc)
-      result.count()
-      preAgg.unpersist(false)
-      result
-    }
+    vertices.aggregateUsingIndex(preAgg, reduceFunc)
   } // end of mapReduceTriplets
 
   override def outerJoinVertices[U: ClassTag, VD2: ClassTag]
