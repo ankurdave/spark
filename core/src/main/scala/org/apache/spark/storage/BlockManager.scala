@@ -333,17 +333,6 @@ private[spark] class BlockManager(
   }
 
   /**
-   * A short-circuited method to get blocks directly from disk. This is used for getting
-   * shuffle blocks. It is safe to do so without a lock on block info since disk store
-   * never deletes (recent) items.
-   */
-  def getLocalFromDisk(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
-    diskStore.getValues(blockId, serializer).orElse {
-      throw new BlockException(blockId, s"Block $blockId not found on disk, though it should be")
-    }
-  }
-
-  /**
    * Get block from local block manager.
    */
   def getLocal(blockId: BlockId, serializer: Serializer = defaultSerializer): Option[BlockResult] = {
@@ -356,128 +345,133 @@ private[spark] class BlockManager(
    */
   def getLocalBytes(blockId: BlockId): Option[ByteBuffer] = {
     logDebug(s"Getting local block $blockId as bytes")
-    // As an optimization for map output fetches, if the block is for a disk-based shuffle, return it
-    // without acquiring a lock; the disk store never deletes (recent) items so this should work
-    if (blockId.isShuffle && !memoryShuffle) {
-      diskStore.getBytes(blockId) match {
-        case Some(bytes) =>
-          Some(bytes)
-        case None =>
-          throw new BlockException(
-            blockId, s"Block $blockId not found on disk, though it should be")
-      }
-    } else {
-      doGetLocal(blockId, asBlockResult = false).asInstanceOf[Option[ByteBuffer]]
-    }
+    doGetLocal(blockId, asBlockResult = false).asInstanceOf[Option[ByteBuffer]]
   }
 
-  private def doGetLocal(blockId: BlockId, asBlockResult: Boolean, serializer: Serializer = defaultSerializer): Option[Any] = {
+  private def doGetLocal(
+      blockId: BlockId,
+      asBlockResult: Boolean,
+      serializer: Serializer = defaultSerializer): Option[Any] = {
     val info = blockInfo.get(blockId).orNull
     if (info != null) {
-      info.synchronized {
-        // Double check to make sure the block is still there. There is a small chance that the
-        // block has been removed by removeBlock (which also synchronizes on the blockInfo object).
-        // Note that this only checks metadata tracking. If user intentionally deleted the block
-        // on disk or from off heap storage without using removeBlock, this conditional check will
-        // still pass but eventually we will get an exception because we can't find the block.
-        if (blockInfo.get(blockId).isEmpty) {
-          logWarning(s"Block $blockId had been removed")
-          return None
-        }
-
-        // If another thread is writing the block, wait for it to become ready.
-        if (!info.waitForReady()) {
-          // If we get here, the block write failed.
-          logWarning(s"Block $blockId was marked as failure.")
-          return None
-        }
-
-        val level = info.level
-        logDebug(s"Level for block $blockId is $level")
-
-        // Look for the block in memory
-        if (level.useMemory) {
-          logDebug(s"Getting block $blockId from memory")
-          val result = if (asBlockResult) {
-            memoryStore.getValues(blockId, serializer).map(new BlockResult(_, DataReadMethod.Memory, info.size))
+      // As an optimization for map output fetches, if the block is for a disk-based shuffle, return it
+      // without acquiring a lock; the disk store never deletes (recent) items so this should work
+      if (blockId.isShuffle && !memoryShuffle) {
+        val result: Option[Any] =
+          if (asBlockResult) {
+            diskStore.getValues(blockId, serializer).map(new BlockResult(_, DataReadMethod.Disk, info.size))
           } else {
-            memoryStore.getBytes(blockId)
+            diskStore.getBytes(blockId)
           }
-          result match {
-            case Some(values) =>
-              return result
-            case None =>
-              logDebug(s"Block $blockId not found in memory")
-          }
+        return result.orElse {
+          throw new BlockException(blockId, s"Block $blockId not found on disk, though it should be")
         }
+      } else {
+        info.synchronized {
+          // Double check to make sure the block is still there. There is a small chance that the
+          // block has been removed by removeBlock (which also synchronizes on the blockInfo object).
+          // Note that this only checks metadata tracking. If user intentionally deleted the block
+          // on disk or from off heap storage without using removeBlock, this conditional check will
+          // still pass but eventually we will get an exception because we can't find the block.
+          if (blockInfo.get(blockId).isEmpty) {
+            logWarning(s"Block $blockId had been removed")
+            return None
+          }
 
-        // Look for the block in Tachyon
-        if (level.useOffHeap) {
-          logDebug(s"Getting block $blockId from tachyon")
-          if (tachyonStore.contains(blockId)) {
-            tachyonStore.getBytes(blockId) match {
-              case Some(bytes) =>
-                if (!asBlockResult) {
-                  return Some(bytes)
-                } else {
-                  return Some(new BlockResult(
-                    dataDeserialize(blockId, bytes, serializer), DataReadMethod.Memory, info.size))
-                }
+          // If another thread is writing the block, wait for it to become ready.
+          if (!info.waitForReady()) {
+            // If we get here, the block write failed.
+            logWarning(s"Block $blockId was marked as failure.")
+            return None
+          }
+
+          val level = info.level
+          logDebug(s"Level for block $blockId is $level")
+
+          // Look for the block in memory
+          if (level.useMemory) {
+            logDebug(s"Getting block $blockId from memory")
+            val result = if (asBlockResult) {
+              memoryStore.getValues(blockId, serializer).map(new BlockResult(_, DataReadMethod.Memory, info.size))
+            } else {
+              memoryStore.getBytes(blockId)
+            }
+            result match {
+              case Some(values) =>
+                return result
               case None =>
-                logDebug(s"Block $blockId not found in tachyon")
+                logDebug(s"Block $blockId not found in memory")
             }
           }
-        }
 
-        // Look for block on disk, potentially storing it back in memory if required
-        if (level.useDisk) {
-          logDebug(s"Getting block $blockId from disk")
-          val bytes: ByteBuffer = diskStore.getBytes(blockId) match {
-            case Some(b) => b
-            case None =>
-              throw new BlockException(
-                blockId, s"Block $blockId not found on disk, though it should be")
+          // Look for the block in Tachyon
+          if (level.useOffHeap) {
+            logDebug(s"Getting block $blockId from tachyon")
+            if (tachyonStore.contains(blockId)) {
+              tachyonStore.getBytes(blockId) match {
+                case Some(bytes) =>
+                  if (!asBlockResult) {
+                    return Some(bytes)
+                  } else {
+                    return Some(new BlockResult(
+                      dataDeserialize(blockId, bytes, serializer), DataReadMethod.Memory, info.size))
+                  }
+                case None =>
+                  logDebug(s"Block $blockId not found in tachyon")
+              }
+            }
           }
-          assert(0 == bytes.position())
 
-          if (!level.useMemory) {
-            // If the block shouldn't be stored in memory, we can just return it
-            if (asBlockResult) {
-              return Some(new BlockResult(dataDeserialize(blockId, bytes, serializer), DataReadMethod.Disk,
-                info.size))
-            } else {
-              return Some(bytes)
+          // Look for block on disk, potentially storing it back in memory if required
+          if (level.useDisk) {
+            logDebug(s"Getting block $blockId from disk")
+            val bytes: ByteBuffer = diskStore.getBytes(blockId) match {
+              case Some(b) => b
+              case None =>
+                throw new BlockException(
+                  blockId, s"Block $blockId not found on disk, though it should be")
             }
-          } else {
-            // Otherwise, we also have to store something in the memory store
-            if (!level.deserialized || !asBlockResult) {
-              /* We'll store the bytes in memory if the block's storage level includes
-               * "memory serialized", or if it should be cached as objects in memory
-               * but we only requested its serialized bytes. */
-              val copyForMemory = ByteBuffer.allocate(bytes.limit)
-              copyForMemory.put(bytes)
-              memoryStore.putBytes(blockId, copyForMemory, level)
-              bytes.rewind()
-            }
-            if (!asBlockResult) {
-              return Some(bytes)
-            } else {
-              val values = dataDeserialize(blockId, bytes, serializer)
-              if (level.deserialized) {
-                // Cache the values before returning them
-                val putResult = memoryStore.putIterator(
-                  blockId, values, level, returnValues = true, allowPersistToDisk = false)
-                // The put may or may not have succeeded, depending on whether there was enough
-                // space to unroll the block. Either way, the put here should return an iterator.
-                putResult.data match {
-                  case Left(it) =>
-                    return Some(new BlockResult(it, DataReadMethod.Disk, info.size))
-                  case _ =>
-                    // This only happens if we dropped the values back to disk (which is never)
-                    throw new SparkException("Memory store did not return an iterator!")
-                }
+            assert(0 == bytes.position())
+
+            if (!level.useMemory) {
+              // If the block shouldn't be stored in memory, we can just return it
+              if (asBlockResult) {
+                return Some(new BlockResult(dataDeserialize(blockId, bytes, serializer), DataReadMethod.Disk,
+                  info.size))
               } else {
-                return Some(new BlockResult(values, DataReadMethod.Disk, info.size))
+                return Some(bytes)
+              }
+            } else {
+              // Otherwise, we also have to store something in the memory store
+              if (!level.deserialized || !asBlockResult) {
+                /* We'll store the bytes in memory if the block's storage level includes
+                 * "memory serialized", or if it should be cached as objects in memory
+                 * but we only requested its serialized bytes. */
+                val copyForMemory = ByteBuffer.allocate(bytes.limit)
+                copyForMemory.put(bytes)
+                memoryStore.putBytes(blockId, copyForMemory, level)
+                bytes.rewind()
+              }
+              if (!asBlockResult) {
+                return Some(bytes)
+              } else {
+                val values = dataDeserialize(blockId, bytes, serializer)
+                if (level.deserialized) {
+                  // Cache the values before returning them
+                  val putResult = memoryStore.putIterator(
+                    blockId, values, level, returnValues = true, allowPersistToDisk = false)
+                  // The put may or may not have succeeded, depending on whether there was enough
+                  // space to unroll the block. Either way, the put here should return an iterator.
+                  putResult.data match {
+                    case Left(it) =>
+                      return Some(new BlockResult(it, DataReadMethod.Disk, info.size))
+                    case _ =>
+                      // This only happens if we dropped the values back to disk (which is never)
+                      throw new SparkException("Memory store did not return an iterator!")
+                  }
+                } else {
+                  return Some(new BlockResult(values, DataReadMethod.Disk, info.size))
+                }
               }
             }
           }
@@ -575,9 +569,8 @@ private[spark] class BlockManager(
   }
 
   /**
-   * A short circuited method to get a block writer that can write data directly to disk.
-   * The Block will be appended to the File specified by filename. This is currently used for
-   * writing shuffle files out. Callers should handle error cases.
+   * Get a block writer that can write data directly into a block. This is currently used for
+   * writing shuffle outputs. Callers should handle error cases.
    */
   def getDiskWriter(
       blockId: BlockId,
