@@ -146,6 +146,42 @@ class GraphSuite extends FunSuite with LocalSparkContext {
     }
   }
 
+  test("partitionBySource") {
+    withSpark { sc =>
+      // Other partitioners should distribute edges evenly
+      val starA = starGraph(sc, 100)
+      val sizesA = starA.edges.partitionsRDD.map(_._2.size)
+      assert(sizesA.filter(_ != 0).count > 1)
+
+      val starB = starA.partitionBy(PartitionStrategy.RandomVertexCut)
+      val sizesB = starB.edges.partitionsRDD.map(_._2.size)
+      assert(sizesB.filter(_ != 0).count > 1)
+
+      // For a star, all edges should go to the same partition
+      val starC = starA.partitionBySource()
+      val sizesC = starC.edges.partitionsRDD.map(_._2.size)
+      assert(sizesC.filter(_ != 0).count === 1)
+
+      // When zipping the vertices and edges, edges should be colocated with their source vertices
+      val zipped = starC.edges.partitionsRDD.zipPartitions(starC.vertices.partitionsRDD) {
+        (ePartIter, vPartIter) => Iterator((ePartIter.map(_._2), vPartIter))
+      }
+      zipped.collect.foreach {
+        case (ePartIter, vPartIter) =>
+          ePartIter.zip(vPartIter).foreach {
+            case (ePart, vPart) =>
+              ePart.srcIds.forall(id => vPart.isDefined(id))
+          }
+          assert(!ePartIter.hasNext)
+          assert(!vPartIter.hasNext)
+      }
+
+      // mapTriplets(... srcAttr ...) should work
+      val attrs = starC.mapVertices((id, attr) => id).mapTriplets(e => e.srcAttr).edges.map(_.attr)
+      assert(attrs.collect.forall(_ == 0L))
+    }
+  }
+
   test("mapVertices") {
     withSpark { sc =>
       val n = 5

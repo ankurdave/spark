@@ -17,6 +17,7 @@
 
 package org.apache.spark.examples.graphx
 
+import org.apache.spark.Logging
 import org.apache.spark.SparkContext._
 import org.apache.spark.graphx.PartitionStrategy
 import org.apache.spark.{SparkContext, SparkConf}
@@ -28,7 +29,7 @@ import java.io.{PrintWriter, FileOutputStream}
  * synthetic log-normal graphs.  The intent of this code is to enable users to
  * profile the GraphX system without access to large graph datasets.
  */
-object SynthBenchmark {
+object SynthBenchmark extends Logging {
 
   /**
    * To run this program use the following:
@@ -59,6 +60,7 @@ object SynthBenchmark {
     var numVertices = 100000
     var numEPart: Option[Int] = None
     var partitionStrategy: Option[PartitionStrategy] = None
+    var partitionBySource = false
     var mu: Double = 4.0
     var sigma: Double = 1.3
     var degFile: String = ""
@@ -69,6 +71,7 @@ object SynthBenchmark {
       case ("nverts", v) => numVertices = v.toInt
       case ("numEPart", v) => numEPart = Some(v.toInt)
       case ("partStrategy", v) => partitionStrategy = Some(PartitionStrategy.fromString(v))
+      case ("partitionBySource", v) => partitionBySource = v.toBoolean
       case ("mu", v) => mu = v.toDouble
       case ("sigma", v) => sigma = v.toDouble
       case ("degFile", v) => degFile = v
@@ -87,7 +90,9 @@ object SynthBenchmark {
     val unpartitionedGraph = GraphGenerators.logNormalGraph(sc, numVertices,
       numEPart.getOrElse(sc.defaultParallelism), mu, sigma)
     // Repartition the graph
-    val graph = partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
+    val graph =
+      if (partitionBySource) unpartitionedGraph.partitionBySource().cache()
+      else partitionStrategy.foldLeft(unpartitionedGraph)(_.partitionBy(_)).cache()
 
     var startTime = System.currentTimeMillis()
     val numEdges = graph.edges.count()
@@ -110,6 +115,10 @@ object SynthBenchmark {
     if (app == "pagerank") {
       println("Running PageRank")
       val totalPR = graph.staticPageRank(niter).vertices.map(_._2).sum()
+      println(s"Total PageRank = $totalPR")
+    } else if (app == "pregelPagerank") {
+      println("Running Pregel PageRank")
+      val totalPR = graph.pregelStaticPageRank(niter).vertices.map(_._2).sum()
       println(s"Total PageRank = $totalPR")
     } else if (app == "cc") {
       println("Running Connected Components")

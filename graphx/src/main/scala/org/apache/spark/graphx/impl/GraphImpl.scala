@@ -20,6 +20,7 @@ package org.apache.spark.graphx.impl
 import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark.HashPartitioner
+import org.apache.spark.Logging
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
 import org.apache.spark.storage.StorageLevel
@@ -39,7 +40,7 @@ import org.apache.spark.graphx.util.BytecodeUtils
 class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     @transient val vertices: VertexRDD[VD],
     @transient val replicatedVertexView: ReplicatedVertexView[VD, ED])
-  extends Graph[VD, ED] with Serializable {
+  extends Graph[VD, ED] with Serializable with Logging {
 
   /** Default constructor is provided to support serialization */
   protected def this() = this(null, null)
@@ -97,6 +98,25 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     GraphImpl.fromExistingRDDs(vertices.withEdges(newEdges), newEdges)
   }
 
+  override def partitionBySource(): Graph[VD, ED] = {
+    val edTag = classTag[ED]
+    val vdTag = classTag[VD]
+    val newEdges = edges.withPartitionsRDD(edges.map { e =>
+      (e.srcId, (e.dstId, e.attr))
+    }
+      .partitionBy(vertices.partitioner.get)
+      .mapPartitionsWithIndex( { (pid, iter) =>
+        val builder = new EdgePartitionBuilder[ED, VD]()(edTag, vdTag)
+        iter.foreach { message =>
+          builder.add(message._1, message._2._1, message._2._2)
+        }
+        val edgePartition = builder.toEdgePartition
+        Iterator((pid, edgePartition))
+      }, preservesPartitioning = true).partitionBy(new HashPartitioner(vertices.partitions.length)))
+      .cache().markPartitionedBy(PartitionedBy.Source)
+    GraphImpl.fromExistingRDDs(vertices.withEdges(newEdges), newEdges)
+  }
+
   override def reverse: Graph[VD, ED] = {
     new GraphImpl(vertices.reverseRoutingTables(), replicatedVertexView.reverse())
   }
@@ -111,7 +131,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       val newVerts = vertices.mapVertexPartitions(_.map(f)).cache()
       val changedVerts = vertices.asInstanceOf[VertexRDD[VD2]].diff(newVerts)
       val newReplicatedVertexView = replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2, ED]]
-        .updateVertices(changedVerts)
+        .updateVertices(newVerts, changedVerts)
       new GraphImpl(newVerts, newReplicatedVertexView)
     } else {
       // The map does not preserve type, so we must re-replicate all vertices
@@ -242,13 +262,56 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       val newVerts = vertices.leftJoin(other)(updateF).cache()
       val changedVerts = vertices.asInstanceOf[VertexRDD[VD2]].diff(newVerts)
       val newReplicatedVertexView = replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2, ED]]
-        .updateVertices(changedVerts)
+        .updateVertices(newVerts, changedVerts)
       new GraphImpl(newVerts, newReplicatedVertexView)
     } else {
       // updateF does not preserve type, so we must re-replicate all vertices
       val newVerts = vertices.leftJoin(other)(updateF)
       GraphImpl(newVerts, replicatedVertexView.edges)
     }
+  }
+
+  override def staticPageRank(numIter: Int, resetProb: Double = 0.15): Graph[Double, Double] = {
+    // If the graph is partitioned by source, the following operations don't require a shuffle
+    // because we only upgrade to (true, false):
+    // - mapTriplets(... srcAttr ...)
+    // - outerJoinVertices
+    // - anything else that calls replicatedVertexView.{updateVertices, upgrade}(true, false)
+
+    vertices.cache()
+    var rankGraph = this
+      // Associate the degree with each vertex
+      .outerJoinVertices(this.outDegrees) { (vid, vdata, deg) => deg.getOrElse(0) }
+      // Set the weight on the edges based on the degree
+      .mapTriplets( e => 1.0 / e.srcAttr )
+      // Set the vertex attributes to the initial pagerank values
+      .mapVertices( (id, attr) => resetProb )
+
+    var iteration = 0
+    var prevRankGraph: Graph[Double, Double] = null
+    while (iteration < numIter) {
+      rankGraph.cache()
+
+      // Compute the outgoing rank contributions of each vertex, perform local preaggregation, and
+      // do the final aggregation at the receiving vertices (requires a shuffle)
+      val rankUpdates = rankGraph.mapReduceTriplets[Double](e => Iterator((e.dstId, e.srcAttr * e.attr)), _ + _)
+
+      // Apply the final rank updates to get the new ranks, using join to preserve ranks of vertices
+      // that didn't receive a message. Calls RVV#updateVertices, so it requires a shuffle unless
+      // the graph is partitioned by source.
+      prevRankGraph = rankGraph
+      rankGraph = rankGraph.joinVertices(rankUpdates) { (id, rank, rankUpdate) =>
+        resetProb + (1.0 - resetProb) * rankUpdate }.cache()
+
+      rankGraph.edges.foreachPartition(x => {}) // also materializes rankGraph.vertices
+      logInfo(s"staticPageRank finished iteration $iteration.")
+      prevRankGraph.vertices.unpersist(false)
+      prevRankGraph.edges.unpersist(false)
+
+      iteration += 1
+    }
+
+    rankGraph
   }
 
   /** Test whether the closure accesses the the attribute with name `attrName`. */

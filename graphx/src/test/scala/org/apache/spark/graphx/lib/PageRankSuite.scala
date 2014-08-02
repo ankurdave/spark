@@ -70,7 +70,7 @@ class PageRankSuite extends FunSuite with LocalSparkContext {
   test("Star PageRank") {
     withSpark { sc =>
       val nVertices = 100
-      val starGraph = GraphGenerators.starGraph(sc, nVertices).cache()
+      val starGraph = GraphGenerators.starGraph(sc, nVertices).partitionBySource().cache()
       val resetProb = 0.15
       val errorTol = 1.0e-5
 
@@ -105,7 +105,7 @@ class PageRankSuite extends FunSuite with LocalSparkContext {
       val tol = 0.0001
       val numIter = 50
       val errorTol = 1.0e-5
-      val gridGraph = GraphGenerators.gridGraph(sc, rows, cols).cache()
+      val gridGraph = GraphGenerators.gridGraph(sc, rows, cols).partitionBySource().cache()
 
       val staticRanks = gridGraph.staticPageRank(numIter, resetProb).vertices.cache()
       val dynamicRanks = gridGraph.pageRank(tol, resetProb).vertices.cache()
@@ -121,7 +121,7 @@ class PageRankSuite extends FunSuite with LocalSparkContext {
     withSpark { sc =>
       val chain1 = (0 until 9).map(x => (x, x+1) )
       val rawEdges = sc.parallelize(chain1, 1).map { case (s,d) => (s.toLong, d.toLong) }
-      val chain = Graph.fromEdgeTuples(rawEdges, 1.0).cache()
+      val chain = Graph.fromEdgeTuples(rawEdges, 1.0).partitionBySource().cache()
       val resetProb = 0.15
       val tol = 0.0001
       val numIter = 10
