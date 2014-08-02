@@ -358,7 +358,7 @@ private[spark] class BlockManager(
     logDebug(s"Getting local block $blockId as bytes")
     // As an optimization for map output fetches, if the block is for a disk-based shuffle, return it
     // without acquiring a lock; the disk store never deletes (recent) items so this should work
-    if (blockId.isShuffle && memoryShuffle) {
+    if (blockId.isShuffle && !memoryShuffle) {
       diskStore.getBytes(blockId) match {
         case Some(bytes) =>
           Some(bytes)
