@@ -107,6 +107,8 @@ private[spark] class BlockManager(
   // Whether to compress shuffle output temporarily spilled to disk
   private val compressShuffleSpill = conf.getBoolean("spark.shuffle.spill.compress", true)
 
+  private val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", true)
+
   private val slaveActor = actorSystem.actorOf(
     Props(new BlockManagerSlaveActor(this, mapOutputTracker)),
     name = "BlockManagerActor" + BlockManager.ID_GENERATOR.next)
@@ -331,6 +333,17 @@ private[spark] class BlockManager(
   }
 
   /**
+   * A short-circuited method to get blocks directly from disk. This is used for getting
+   * shuffle blocks. It is safe to do so without a lock on block info since disk store
+   * never deletes (recent) items.
+   */
+  def getLocalFromDisk(blockId: BlockId, serializer: Serializer): Option[Iterator[Any]] = {
+    diskStore.getValues(blockId, serializer).orElse {
+      throw new BlockException(blockId, s"Block $blockId not found on disk, though it should be")
+    }
+  }
+
+  /**
    * Get block from local block manager.
    */
   def getLocal(blockId: BlockId, serializer: Serializer = defaultSerializer): Option[BlockResult] = {
@@ -343,7 +356,19 @@ private[spark] class BlockManager(
    */
   def getLocalBytes(blockId: BlockId): Option[ByteBuffer] = {
     logDebug(s"Getting local block $blockId as bytes")
-    doGetLocal(blockId, asBlockResult = false).asInstanceOf[Option[ByteBuffer]]
+    // As an optimization for map output fetches, if the block is for a disk-based shuffle, return it
+    // without acquiring a lock; the disk store never deletes (recent) items so this should work
+    if (blockId.isShuffle && memoryShuffle) {
+      diskStore.getBytes(blockId) match {
+        case Some(bytes) =>
+          Some(bytes)
+        case None =>
+          throw new BlockException(
+            blockId, s"Block $blockId not found on disk, though it should be")
+      }
+    } else {
+      doGetLocal(blockId, asBlockResult = false).asInstanceOf[Option[ByteBuffer]]
+    }
   }
 
   private def doGetLocal(blockId: BlockId, asBlockResult: Boolean, serializer: Serializer = defaultSerializer): Option[Any] = {

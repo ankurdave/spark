@@ -76,6 +76,8 @@ object BlockFetcherIterator {
 
     import blockManager._
 
+    private val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", true)
+
     private var _remoteBytesRead = 0L
     private var _fetchWaitTime = 0L
 
@@ -200,9 +202,11 @@ object BlockFetcherIterator {
       // these all at once because they will just memory-map some files, so they won't consume
       // any memory that might exceed our maxBytesInFlight
       for (id <- localBlocksToFetch) {
-        getLocal(id, serializer) match {
-          case Some(res) => {
-            val iter = res.data
+        val blockIterOpt =
+          if (memoryShuffle) getLocal(id, serializer).map(_.data)
+          else getLocalFromDisk(id, serializer)
+        blockIterOpt match {
+          case Some(iter) => {
             // Pass 0 as size since it's not in flight
             results.put(new FetchResult(id, 0, () => iter))
             logDebug("Got local block " + id)
