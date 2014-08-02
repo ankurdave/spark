@@ -73,6 +73,7 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
   val sortBasedShuffle =
     conf.get("spark.shuffle.manager", "") == classOf[SortShuffleManager].getName
 
+  // TODO: allow setting storage level of shuffle blocks? Then short-circuit when storage level is disk to regain previous performance
   val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", true)
 
   private val bufferSize = conf.getInt("spark.shuffle.file.buffer.kb", 100) * 1024
