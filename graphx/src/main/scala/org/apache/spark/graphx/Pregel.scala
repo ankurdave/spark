@@ -146,11 +146,16 @@ object Pregel extends Logging {
 
       logInfo("Pregel finished iteration " + i)
 
+      messages.foreachPartition { iter =>
+        org.apache.spark.SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffles()
+      }
+
       // Unpersist the RDDs hidden by newly-materialized RDDs
       oldMessages.unpersist(blocking=false)
       newVerts.unpersist(blocking=false)
       prevG.unpersistVertices(blocking=false)
       prevG.edges.unpersist(blocking=false)
+
       // count the iteration
       i += 1
     }

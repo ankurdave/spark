@@ -107,7 +107,7 @@ private[spark] class BlockManager(
   // Whether to compress shuffle output temporarily spilled to disk
   private val compressShuffleSpill = conf.getBoolean("spark.shuffle.spill.compress", true)
 
-  private val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", true)
+  private val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", false)
 
   private val slaveActor = actorSystem.actorOf(
     Props(new BlockManagerSlaveActor(this, mapOutputTracker)),

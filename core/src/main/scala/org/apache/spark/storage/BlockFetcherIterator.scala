@@ -76,7 +76,7 @@ object BlockFetcherIterator {
 
     import blockManager._
 
-    private val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", true)
+    private val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", false)
 
     private var _remoteBytesRead = 0L
     private var _fetchWaitTime = 0L

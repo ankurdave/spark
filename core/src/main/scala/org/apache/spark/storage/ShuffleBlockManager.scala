@@ -74,7 +74,7 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
     conf.get("spark.shuffle.manager", "") == classOf[SortShuffleManager].getName
 
   // TODO: allow setting storage level of shuffle blocks? Then short-circuit when storage level is disk to regain previous performance
-  val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", true)
+  val memoryShuffle = conf.getBoolean("spark.shuffle.inMemory", false)
 
   private val bufferSize = conf.getInt("spark.shuffle.file.buffer.kb", 100) * 1024
 
@@ -200,6 +200,10 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
     throw new IllegalStateException("Failed to find shuffle block: " + id)
   }
 
+  def removeAllShuffles() {
+    for (shuffleId <- shuffleStates.toMap.keySet) removeShuffle(shuffleId)
+  }
+
   /** Remove all the blocks / files and metadata related to a particular shuffle. */
   def removeShuffle(shuffleId: ShuffleId): Boolean = {
     // Do not change the ordering of this, if shuffleStates should be removed only
@@ -227,7 +231,11 @@ class ShuffleBlockManager(blockManager: BlockManager) extends Logging {
         } else {
           for (mapId <- state.completedMapTasks; reduceId <- 0 until state.numBuckets) {
             val blockId = new ShuffleBlockId(shuffleId, mapId, reduceId)
-            blockManager.diskBlockManager.getFile(blockId).delete() // TODO: handle in-memory case
+            if (memoryShuffle) {
+              blockManager.removeBlock(blockId, tellMaster = false)
+            } else {
+              blockManager.diskBlockManager.getFile(blockId).delete()
+            }
           }
         }
         logInfo("Deleted all files for shuffle " + shuffleId)

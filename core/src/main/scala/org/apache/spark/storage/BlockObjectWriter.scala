@@ -235,7 +235,12 @@ private[spark] class MemoryBlockObjectWriter(
       s.flush()
       bs.flush()
       val bytes = baos.toByteArray
-      blockManager.putBytes(blockId, ByteBuffer.wrap(bytes), StorageLevel.MEMORY_AND_DISK_SER)
+
+      // Remove the block if it already exists from a previous commit
+      blockManager.removeBlock(blockId, tellMaster = false)
+
+      blockManager.putBytes(
+        blockId, ByteBuffer.wrap(bytes), StorageLevel.MEMORY_AND_DISK_SER, tellMaster = false)
       _bytesWritten += bytes.length
       bytes.length
     } else {
