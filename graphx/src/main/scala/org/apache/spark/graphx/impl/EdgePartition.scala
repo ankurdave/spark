@@ -19,6 +19,7 @@ package org.apache.spark.graphx.impl
 
 import scala.reflect.{classTag, ClassTag}
 
+import org.apache.spark.Accumulator
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 
@@ -295,9 +296,9 @@ class EdgePartition[
    * the same object is re-used in `next()`.
    */
   def upgradeIterator(
-      edgeIter: Iterator[Edge[ED]], includeSrc: Boolean = true, includeDst: Boolean = true)
+      edgeIter: Iterator[Edge[ED]], includeSrc: Boolean = true, includeDst: Boolean = true, timer: Accumulator[Long] = null)
     : Iterator[EdgeTriplet[VD, ED]] = {
-    new ReusingEdgeTripletIterator(edgeIter, this, includeSrc, includeDst)
+    new ReusingEdgeTripletIterator(edgeIter, this, includeSrc, includeDst, timer)
   }
 
   /**

@@ -19,6 +19,7 @@ package org.apache.spark.graphx.impl
 
 import scala.reflect.ClassTag
 
+import org.apache.spark.Accumulator
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 
@@ -64,7 +65,9 @@ class ReusingEdgeTripletIterator[VD: ClassTag, ED: ClassTag](
     val edgeIter: Iterator[Edge[ED]],
     val edgePartition: EdgePartition[ED, VD],
     val includeSrc: Boolean,
-    val includeDst: Boolean)
+    val includeDst: Boolean,
+    timer: Accumulator[Long] = null
+  )
   extends Iterator[EdgeTriplet[VD, ED]] {
 
   private val triplet = new EdgeTriplet[VD, ED]
@@ -73,12 +76,14 @@ class ReusingEdgeTripletIterator[VD: ClassTag, ED: ClassTag](
 
   override def next() = {
     triplet.set(edgeIter.next())
+    val start = System.nanoTime
     if (includeSrc) {
       triplet.srcAttr = edgePartition.vertices(triplet.srcId)
     }
     if (includeDst) {
       triplet.dstAttr = edgePartition.vertices(triplet.dstId)
     }
+    if (timer != null) timer += System.nanoTime - start
     triplet
   }
 }

@@ -21,9 +21,11 @@ import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark.HashPartitioner
 import org.apache.spark.Logging
+import org.apache.spark.Accumulator
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.CompletionIterator
 
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.impl.GraphImpl._
@@ -192,6 +194,17 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
       reduceFunc: (A, A) => A,
       activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None): VertexRDD[A] = {
+    val acc1 = vertices.context.accumulator(0L)
+    val acc2 = vertices.context.accumulator(0L)
+    mapReduceTripletsTimed(mapFunc, reduceFunc, acc1, acc2, activeSetOpt)
+  }
+
+  override def mapReduceTripletsTimed[A: ClassTag](
+      mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+      reduceFunc: (A, A) => A,
+      timer: Accumulator[Long],
+      timer2: Accumulator[Long],
+      activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None): VertexRDD[A] = {
 
     vertices.cache()
 
@@ -211,6 +224,8 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     // Map and combine.
     val preAgg = view.edges.partitionsRDD.mapPartitions(_.flatMap {
       case (pid, edgePartition) =>
+        val start = System.nanoTime
+
         // Choose scan method
         val activeFraction = edgePartition.numActives.getOrElse(0) / edgePartition.indexSize.toFloat
         val edgeIter = activeDirectionOpt match {
@@ -240,8 +255,9 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         }
 
         // Scan edges and run the map function
-        val mapOutputs = edgePartition.upgradeIterator(edgeIter, mapUsesSrcAttr, mapUsesDstAttr)
-          .flatMap(mapFunc(_))
+        val mapOutputs = CompletionIterator[(VertexId, A), Iterator[(VertexId, A)]](edgePartition.upgradeIterator(edgeIter, mapUsesSrcAttr, mapUsesDstAttr, timer)
+          .flatMap(mapFunc(_)), timer2 += System.nanoTime - start)
+
         // Note: This doesn't allow users to send messages to arbitrary vertices.
         edgePartition.vertices.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
     }).setName("GraphImpl.mapReduceTriplets - preAgg")
@@ -278,6 +294,9 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     // - outerJoinVertices
     // - anything else that calls replicatedVertexView.{updateVertices, upgrade}(true, false)
 
+    val hashLookupTime = vertices.context.accumulator(0L)
+    val mrTripletsTime = vertices.context.accumulator(0L)
+
     vertices.cache()
     var rankGraph = this
       // Associate the degree with each vertex
@@ -294,7 +313,8 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
       // Compute the outgoing rank contributions of each vertex, perform local preaggregation, and
       // do the final aggregation at the receiving vertices (requires a shuffle)
-      val rankUpdates = rankGraph.mapReduceTriplets[Double](e => Iterator((e.dstId, e.srcAttr * e.attr)), _ + _)
+      val rankUpdates = rankGraph.mapReduceTripletsTimed[Double](e => Iterator((e.dstId, e.srcAttr * e.attr)), _ + _,
+        hashLookupTime, mrTripletsTime)
 
       // Apply the final rank updates to get the new ranks, using join to preserve ranks of vertices
       // that didn't receive a message. Calls RVV#updateVertices, so it requires a shuffle unless
@@ -303,12 +323,11 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       rankGraph = rankGraph.joinVertices(rankUpdates) { (id, rank, rankUpdate) =>
         resetProb + (1.0 - resetProb) * rankUpdate }.cache()
 
-      rankGraph.edges.foreachPartition(x => {}) // also materializes rankGraph.vertices
-      logInfo(s"staticPageRank finished iteration $iteration.")
-
       rankGraph.edges.foreachPartition { iter =>
         org.apache.spark.SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffles()
-      }
+      } // also materializes rankGraph.vertices
+      logInfo(s"staticPageRank finished iteration $iteration. mrTripletsTime so far: ${mrTripletsTime.value}. Hash lookup time so far: ${hashLookupTime.value}")
+
 
       prevRankGraph.vertices.unpersist(false)
       prevRankGraph.edges.unpersist(false)

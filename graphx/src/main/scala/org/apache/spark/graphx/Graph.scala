@@ -20,6 +20,7 @@ package org.apache.spark.graphx
 import scala.language.implicitConversions
 import scala.reflect.ClassTag
 
+import org.apache.spark.Accumulator
 import org.apache.spark.graphx.impl._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
@@ -324,6 +325,14 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
   def mapReduceTriplets[A: ClassTag](
       mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
       reduceFunc: (A, A) => A,
+      activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None)
+    : VertexRDD[A]
+
+  def mapReduceTripletsTimed[A: ClassTag](
+      mapFunc: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+      reduceFunc: (A, A) => A,
+      timer: Accumulator[Long],
+      timer2: Accumulator[Long],
       activeSetOpt: Option[(VertexRDD[_], EdgeDirection)] = None)
     : VertexRDD[A]
 
