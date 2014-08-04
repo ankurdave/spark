@@ -69,7 +69,7 @@ class ReusingEdgeTripletIterator[VD: ClassTag, ED: ClassTag](
 
   private val triplet = new EdgeTriplet[VD, ED]
 
-  private val r = new scala.util.Random()
+  private val numVertices = edgePartition.vertices.size
 
   override def hasNext = edgeIter.hasNext
 
@@ -77,10 +77,10 @@ class ReusingEdgeTripletIterator[VD: ClassTag, ED: ClassTag](
     triplet.set(edgeIter.next())
     if (includeSrc) {
       // Remove the hash lookup, but keep the random access
-      triplet.srcAttr = edgePartition.vertices.values(r.nextInt(edgePartition.vertices.size))
+      triplet.srcAttr = edgePartition.vertices.values((triplet.srcId % numVertices).toInt)
     }
     if (includeDst) {
-      triplet.dstAttr = edgePartition.vertices.values(r.nextInt(edgePartition.vertices.size))
+      triplet.dstAttr = edgePartition.vertices.values((triplet.dstId % numVertices).toInt)
     }
     triplet
   }
