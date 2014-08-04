@@ -76,14 +76,14 @@ class ReusingEdgeTripletIterator[VD: ClassTag, ED: ClassTag](
 
   override def next() = {
     triplet.set(edgeIter.next())
-    val start = System.nanoTime
-    if (includeSrc) {
-      triplet.srcAttr = edgePartition.vertices(triplet.srcId)
-    }
-    if (includeDst) {
-      triplet.dstAttr = edgePartition.vertices(triplet.dstId)
-    }
-    if (timer != null) timer += System.nanoTime - start
+    // val start = System.nanoTime
+    // if (includeSrc) {
+    //   triplet.srcAttr = edgePartition.vertices(triplet.srcId)
+    // }
+    // if (includeDst) {
+    //   triplet.dstAttr = edgePartition.vertices(triplet.dstId)
+    // }
+    // if (timer != null) timer += System.nanoTime - start
     triplet
   }
 }

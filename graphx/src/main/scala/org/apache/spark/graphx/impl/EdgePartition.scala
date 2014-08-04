@@ -271,9 +271,9 @@ class EdgePartition[
     override def hasNext: Boolean = pos < EdgePartition.this.size
 
     override def next(): Edge[ED] = {
-      edge.srcId = srcIds(pos)
-      edge.dstId = dstIds(pos)
-      edge.attr = data(pos)
+      // edge.srcId = srcIds(pos)
+      // edge.dstId = dstIds(pos)
+      // edge.attr = data(pos)
       pos += 1
       edge
     }

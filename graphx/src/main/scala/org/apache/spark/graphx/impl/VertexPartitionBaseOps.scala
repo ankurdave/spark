@@ -207,17 +207,17 @@ private[graphx] abstract class VertexPartitionBaseOps
     iter.foreach { product =>
       val vid = product._1
       val vdata = product._2
-      val pos = self.index.getPos(vid)
-      if (pos >= 0) {
-        if (newMask.get(pos)) {
-          newValues(pos) = reduceFunc(newValues(pos), vdata)
-        } else { // otherwise just store the new value
-          newMask.set(pos)
-          newValues(pos) = vdata
-        }
-      } else {
-        throw new Exception(s"aggregateUsingIndex: Dropping $product")
-      }
+      val pos = 0 //self.index.getPos(vid)
+      // if (pos >= 0) {
+      //   if (newMask.get(pos)) {
+      //     newValues(pos) = reduceFunc(newValues(pos), vdata)
+      //   } else { // otherwise just store the new value
+      //     newMask.set(pos)
+      //     newValues(pos) = vdata
+      //   }
+      // } else {
+      //   throw new Exception(s"aggregateUsingIndex: Dropping $product")
+      // }
     }
     this.withValues(newValues).withMask(newMask)
   }
