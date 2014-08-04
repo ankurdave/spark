@@ -305,6 +305,11 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
       rankGraph.edges.foreachPartition(x => {}) // also materializes rankGraph.vertices
       logInfo(s"staticPageRank finished iteration $iteration.")
+
+      rankGraph.edges.foreachPartition { iter =>
+        org.apache.spark.SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffles()
+      }
+
       prevRankGraph.vertices.unpersist(false)
       prevRankGraph.edges.unpersist(false)
 
