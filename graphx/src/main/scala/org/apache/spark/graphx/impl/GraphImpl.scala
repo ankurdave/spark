@@ -262,10 +262,10 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         val mapOutputs = edgeIter.flatMap { e =>
           et.set(e)
           if (mapUsesSrcAttr) {
-            et.srcAttr = vPart.values(e.srcId.toInt % numVertices)
+            et.srcAttr = null.asInstanceOf[VD]//vPart.values(e.srcId.toInt % numVertices)
           }
           if (mapUsesDstAttr) {
-            et.dstAttr = vPart.values(e.dstId.toInt % numVertices)
+            et.dstAttr = null.asInstanceOf[VD]//vPart.values(e.dstId.toInt % numVertices)
           }
           mapFunc(et)
         }
