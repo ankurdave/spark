@@ -230,51 +230,8 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         val (vPid, vPart) = vPartIter.next()
         assert(!vPartIter.hasNext)
         assert(ePid == vPid)
-        // Choose scan method
-        val activeFraction = vPart.numActives.getOrElse(0) / edgePartition.indexSize.toFloat
-        val edgeIter = activeDirectionOpt match {
-          case Some(EdgeDirection.Both) =>
-            if (activeFraction < 0.8) {
-              edgePartition.indexIterator(srcVertexId => vPart.isActive(srcVertexId))
-                .filter(e => vPart.isActive(e.dstId))
-            } else {
-              edgePartition.iterator.filter(e => vPart.isActive(e.srcId) && vPart.isActive(e.dstId))
-            }
-          case Some(EdgeDirection.Either) =>
-            // TODO: Because we only have a clustered index on the source vertex ID, we can't filter
-            // the index here. Instead we have to scan all edges and then do the filter.
-            edgePartition.iterator.filter(e => vPart.isActive(e.srcId) || vPart.isActive(e.dstId))
-          case Some(EdgeDirection.Out) =>
-            if (activeFraction < 0.8) {
-              edgePartition.indexIterator(srcVertexId => vPart.isActive(srcVertexId))
-            } else {
-              edgePartition.iterator.filter(e => vPart.isActive(e.srcId))
-            }
-          case Some(EdgeDirection.In) =>
-            edgePartition.iterator.filter(e => vPart.isActive(e.dstId))
-          case _ => // None
-            edgePartition.iterator
-        }
 
-        // Scan edges and run the map function
-        val et = new EdgeTriplet[VD, ED]
-        val numVertices = vPart.size
-        val mapOutputs = edgeIter.map { e =>
-          et.set(e) // TODO: comment this out, or replace with manual setting
-          if (mapUsesSrcAttr) {
-            et.srcAttr = null.asInstanceOf[VD]//vPart.values(e.srcId.toInt % numVertices)
-          }
-          if (mapUsesDstAttr) {
-            et.dstAttr = null.asInstanceOf[VD]//vPart.values(e.dstId.toInt % numVertices)
-          }
-          // mapFunc(et)
-          (et.dstId, et.srcAttr.asInstanceOf[Double] * et.attr.asInstanceOf[Double]).asInstanceOf[(VertexId, A)]
-        }
-
-        // TODO: replace the whole preAgg with a no-op by returning vPart.iterator
-
-        // Note: This doesn't allow users to send messages to arbitrary vertices.
-        vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
+        vPart.iterator.asInstanceOf[Iterator[(VertexId, A)]]
       } else {
         logError("preAgg in mapReduceTriplets tried to iterate over empty partition.")
         Iterator.empty

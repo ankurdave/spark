@@ -82,10 +82,7 @@ object PageRank extends Logging {
     // Initialize the pagerankGraph with each edge attribute having
     // weight 1/outDegree and each vertex with attribute 1.0.
     val pagerankGraph: Graph[Double, Double] = graph
-      // Associate the degree with each vertex
-      .outerJoinVertices(graph.outDegrees) { (vid, vdata, deg) => deg.getOrElse(0) }
-      // Set the weight on the edges based on the degree
-      .mapTriplets( e => 1.0 / e.srcAttr )
+      .mapEdges( e => 1.0 )
       // Set the vertex attributes to the initial pagerank values
       .mapVertices( (id, attr) => 1.0 )
       .cache()
