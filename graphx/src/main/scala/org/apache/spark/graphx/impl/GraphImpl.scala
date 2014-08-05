@@ -258,13 +258,14 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
         // Scan edges and run the map function
         val et = new EdgeTriplet[VD, ED]
+        val numVertices = vPart.size
         val mapOutputs = edgeIter.flatMap { e =>
           et.set(e)
           if (mapUsesSrcAttr) {
-            et.srcAttr = vPart(e.srcId)
+            et.srcAttr = vPart.values(e.srcId.toInt % numVertices)
           }
           if (mapUsesDstAttr) {
-            et.dstAttr = vPart(e.dstId)
+            et.dstAttr = vPart.values(e.dstId.toInt % numVertices)
           }
           mapFunc(et)
         }
