@@ -262,6 +262,7 @@ class VertexPartition[@specialized(Long, Int, Double) VD: ClassTag](
         if (newMask.get(pos)) {
           newValues(pos) = reduceFunc(newValues(pos), vdata)
         } else { // otherwise just store the new value
+          // TODO: only do this branch
           newMask.set(pos)
           newValues(pos) = vdata
         }

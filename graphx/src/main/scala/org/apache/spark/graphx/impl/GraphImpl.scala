@@ -270,6 +270,9 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
           // mapFunc(et)
           (et.dstId, et.srcAttr.asInstanceOf[Double] * et.attr.asInstanceOf[Double]).asInstanceOf[(VertexId, A)]
         }
+
+        // TODO: replace the whole preAgg with a no-op by returning vPart.iterator
+
         // Note: This doesn't allow users to send messages to arbitrary vertices.
         vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
       } else {
