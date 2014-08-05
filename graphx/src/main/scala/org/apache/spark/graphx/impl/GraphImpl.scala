@@ -259,15 +259,16 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         // Scan edges and run the map function
         val et = new EdgeTriplet[VD, ED]
         val numVertices = vPart.size
-        val mapOutputs = edgeIter.flatMap { e =>
-          et.set(e)
+        val mapOutputs = edgeIter.map { e =>
+          et.set(e) // TODO: comment this out, or replace with manual setting
           if (mapUsesSrcAttr) {
             et.srcAttr = null.asInstanceOf[VD]//vPart.values(e.srcId.toInt % numVertices)
           }
           if (mapUsesDstAttr) {
             et.dstAttr = null.asInstanceOf[VD]//vPart.values(e.dstId.toInt % numVertices)
           }
-          mapFunc(et)
+          // mapFunc(et)
+          (et.dstId, et.srcAttr.asInstanceOf[Double] * et.attr.asInstanceOf[Double]).asInstanceOf[(VertexId, A)]
         }
         // Note: This doesn't allow users to send messages to arbitrary vertices.
         vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
