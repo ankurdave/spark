@@ -40,6 +40,8 @@ class EdgeTriplet[VD, ED] extends Edge[ED] {
   protected[spark] def set(other: Edge[ED]): EdgeTriplet[VD,ED] = {
     srcId = other.srcId
     dstId = other.dstId
+    localSrcId = other.localSrcId
+    localDstId = other.localDstId
     attr = other.attr
     this
   }

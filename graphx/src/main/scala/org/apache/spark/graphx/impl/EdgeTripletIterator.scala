@@ -41,12 +41,14 @@ class EdgeTripletIterator[VD: ClassTag, ED: ClassTag](
   override def next() = {
     val triplet = new EdgeTriplet[VD, ED]
     triplet.srcId = edgePartition.srcIds(pos)
+    triplet.localSrcId = edgePartition.localSrcIds(pos)
     if (includeSrc) {
-      triplet.srcAttr = edgePartition.vertices(triplet.srcId)
+      triplet.srcAttr = edgePartition.vertices.at(triplet.localSrcId)
     }
     triplet.dstId = edgePartition.dstIds(pos)
+    triplet.localDstId = edgePartition.localDstIds(pos)
     if (includeDst) {
-      triplet.dstAttr = edgePartition.vertices(triplet.dstId)
+      triplet.dstAttr = edgePartition.vertices.at(triplet.localDstId)
     }
     triplet.attr = edgePartition.data(pos)
     pos += 1
@@ -74,10 +76,10 @@ class ReusingEdgeTripletIterator[VD: ClassTag, ED: ClassTag](
   override def next() = {
     triplet.set(edgeIter.next())
     if (includeSrc) {
-      triplet.srcAttr = edgePartition.vertices(triplet.srcId)
+      triplet.srcAttr = edgePartition.vertices.at(triplet.localSrcId)
     }
     if (includeDst) {
-      triplet.dstAttr = edgePartition.vertices(triplet.dstId)
+      triplet.dstAttr = edgePartition.vertices.at(triplet.localDstId)
     }
     triplet
   }

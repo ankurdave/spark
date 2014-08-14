@@ -220,6 +220,26 @@ private[graphx] abstract class VertexPartitionBaseOps
     this.withValues(newValues).withMask(newMask)
   }
 
+  def aggregateLocalIdsUsingIndex[VD2: ClassTag](
+      iter: Iterator[Product2[Int, VD2]],
+      reduceFunc: (VD2, VD2) => VD2): Self[VD2] = {
+    val newMask = new BitSet(self.capacity)
+    val newValues = new Array[VD2](self.capacity)
+    iter.foreach { product =>
+      val pos = product._1
+      val vdata = product._2
+      if (pos >= 0) {
+        if (newMask.get(pos)) {
+          newValues(pos) = reduceFunc(newValues(pos), vdata)
+        } else { // otherwise just store the new value
+          newMask.set(pos)
+          newValues(pos) = vdata
+        }
+      }
+    }
+    this.withValues(newValues).withMask(newMask)
+  }
+
   /**
    * Construct a new VertexPartition whose index contains only the vertices in the mask.
    */

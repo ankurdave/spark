@@ -26,7 +26,7 @@ import org.apache.spark.graphx._
 
 class EdgeTripletIteratorSuite extends FunSuite {
   test("iterator.toList") {
-    val builder = new EdgePartitionBuilder[Int, Int]
+    val builder = new FreshEdgePartitionBuilder[Int, Int]
     builder.add(1, 2, 0)
     builder.add(1, 3, 0)
     builder.add(1, 4, 0)

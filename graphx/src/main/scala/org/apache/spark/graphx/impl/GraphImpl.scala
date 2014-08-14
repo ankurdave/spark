@@ -86,7 +86,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     }
       .partitionBy(new HashPartitioner(numPartitions))
       .mapPartitionsWithIndex( { (pid, iter) =>
-        val builder = new EdgePartitionBuilder[ED, VD]()(edTag, vdTag)
+        val builder = new FreshEdgePartitionBuilder[ED, VD]()(edTag, vdTag)
         iter.foreach { message =>
           val data = message._2
           builder.add(data._1, data._2, data._3)
@@ -221,9 +221,10 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
         // Scan edges and run the map function
         val mapOutputs = edgePartition.upgradeIterator(edgeIter, mapUsesSrcAttr, mapUsesDstAttr)
-          .flatMap(mapFunc(_))
+          .flatMap(edge => mapFunc(edge).map(msg =>
+            (if (msg._1 == edge.srcId) edge.localSrcId else edge.localDstId, msg._2)))
         // Note: This doesn't allow users to send messages to arbitrary vertices.
-        edgePartition.vertices.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
+        edgePartition.vertices.aggregateLocalIdsUsingIndex(mapOutputs, reduceFunc).iterator
     }).setName("GraphImpl.mapReduceTriplets - preAgg")
 
     // do the final reduction reusing the index map
@@ -306,9 +307,7 @@ object GraphImpl {
       vertices: VertexRDD[VD],
       edges: EdgeRDD[ED, _]): GraphImpl[VD, ED] = {
     // Convert the vertex partitions in edges to the correct type
-    val newEdges = edges.mapEdgePartitions(
-      (pid, part) => part.withVertices(part.vertices.map(
-        (vid, attr) => null.asInstanceOf[VD])))
+    val newEdges = edges.mapEdgePartitions((pid, part) => part.clearVertices[VD])
     GraphImpl.fromExistingRDDs(vertices, newEdges)
   }
 

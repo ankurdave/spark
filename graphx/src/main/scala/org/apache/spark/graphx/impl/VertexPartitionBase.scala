@@ -74,6 +74,9 @@ private[graphx] abstract class VertexPartitionBase[@specialized(Long, Int, Doubl
   /** Return the vertex attribute for the given vertex ID. */
   def apply(vid: VertexId): VD = values(index.getPos(vid))
 
+  /** Return the vertex attribute at the given position (local id). */
+  def at(localId: Int): VD = values(localId)
+
   def isDefined(vid: VertexId): Boolean = {
     val pos = index.getPos(vid)
     pos >= 0 && mask.get(pos)

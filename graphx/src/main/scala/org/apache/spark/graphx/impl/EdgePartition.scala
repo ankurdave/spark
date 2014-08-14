@@ -32,6 +32,8 @@ import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
  *
  * @param srcIds the source vertex id of each edge
  * @param dstIds the destination vertex id of each edge
+ * @param localSrcIds the local source vertex id of each edge as an index into `vertices`
+ * @param localDstIds the local destination vertex id of each edge as an index into `vertices`
  * @param data the attribute associated with each edge
  * @param index a clustered index on source vertex id
  * @param vertices a map from referenced vertex ids to their corresponding attributes. Must
@@ -44,6 +46,8 @@ class EdgePartition[
     @specialized(Char, Int, Boolean, Byte, Long, Float, Double) ED: ClassTag, VD: ClassTag](
     val srcIds: Array[VertexId] = null,
     val dstIds: Array[VertexId] = null,
+    val localSrcIds: Array[Int] = null,
+    val localDstIds: Array[Int] = null,
     val data: Array[ED] = null,
     val index: GraphXPrimitiveKeyOpenHashMap[VertexId, Int] = null,
     val vertices: VertexPartition[VD] = null,
@@ -52,30 +56,31 @@ class EdgePartition[
 
   /** Return a new `EdgePartition` with the specified edge data. */
   def withData[ED2: ClassTag](data_ : Array[ED2]): EdgePartition[ED2, VD] = {
-    new EdgePartition(srcIds, dstIds, data_, index, vertices, activeSet)
-  }
-
-  /** Return a new `EdgePartition` with the specified vertex partition. */
-  def withVertices[VD2: ClassTag](
-      vertices_ : VertexPartition[VD2]): EdgePartition[ED, VD2] = {
-    new EdgePartition(srcIds, dstIds, data, index, vertices_, activeSet)
+    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data_, index, vertices, activeSet)
   }
 
   /** Return a new `EdgePartition` with the specified active set, provided as an iterator. */
   def withActiveSet(iter: Iterator[VertexId]): EdgePartition[ED, VD] = {
     val newActiveSet = new VertexSet
     iter.foreach(newActiveSet.add(_))
-    new EdgePartition(srcIds, dstIds, data, index, vertices, Some(newActiveSet))
+    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index, vertices, Some(newActiveSet))
   }
 
   /** Return a new `EdgePartition` with the specified active set. */
   def withActiveSet(activeSet_ : Option[VertexSet]): EdgePartition[ED, VD] = {
-    new EdgePartition(srcIds, dstIds, data, index, vertices, activeSet_)
+    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index, vertices, activeSet_)
   }
 
   /** Return a new `EdgePartition` with updates to vertex attributes specified in `iter`. */
   def updateVertices(iter: Iterator[(VertexId, VD)]): EdgePartition[ED, VD] = {
-    this.withVertices(vertices.innerJoinKeepLeft(iter))
+    val newVertices = vertices.innerJoinKeepLeft(iter)
+    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index, newVertices, activeSet)
+  }
+
+  /** Return a new `EdgePartition` without any locally cached vertex attributes. */
+  def clearVertices[VD2: ClassTag](): EdgePartition[ED, VD2] = {
+    val newVertices = vertices.withValues(new Array[VD2](vertices.values.length))
+    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index, newVertices, activeSet)
   }
 
   /** Look up vid in activeSet, throwing an exception if it is None. */
@@ -92,11 +97,11 @@ class EdgePartition[
    * @return a new edge partition with all edges reversed.
    */
   def reverse: EdgePartition[ED, VD] = {
-    val builder = new EdgePartitionBuilder(size)(classTag[ED], classTag[VD])
+    val builder = new VertexPreservingEdgePartitionBuilder(vertices, size)(classTag[ED], classTag[VD])
     for (e <- iterator) {
-      builder.add(e.dstId, e.srcId, e.attr)
+      builder.add(e.dstId, e.srcId, e.localDstId, e.localSrcId, e.attr)
     }
-    builder.toEdgePartition.withVertices(vertices).withActiveSet(activeSet)
+    builder.toEdgePartition.withActiveSet(activeSet)
   }
 
   /**
@@ -159,11 +164,11 @@ class EdgePartition[
       vpred: (VertexId, VD) => Boolean): EdgePartition[ED, VD] = {
     val filtered = tripletIterator().filter(et =>
       vpred(et.srcId, et.srcAttr) && vpred(et.dstId, et.dstAttr) && epred(et))
-    val builder = new EdgePartitionBuilder[ED, VD]
+    val builder = new VertexPreservingEdgePartitionBuilder[ED, VD](vertices)
     for (e <- filtered) {
-      builder.add(e.srcId, e.dstId, e.attr)
+      builder.add(e.srcId, e.dstId, e.localSrcId, e.localDstId, e.attr)
     }
-    builder.toEdgePartition.withVertices(vertices).withActiveSet(activeSet)
+    builder.toEdgePartition.withActiveSet(activeSet)
   }
 
   /**
@@ -183,7 +188,7 @@ class EdgePartition[
    * @return a new edge partition without duplicate edges
    */
   def groupEdges(merge: (ED, ED) => ED): EdgePartition[ED, VD] = {
-    val builder = new EdgePartitionBuilder[ED, VD]
+    val builder = new VertexPreservingEdgePartitionBuilder[ED, VD](vertices)
     var currSrcId: VertexId = null.asInstanceOf[VertexId]
     var currDstId: VertexId = null.asInstanceOf[VertexId]
     var currAttr: ED = null.asInstanceOf[ED]
@@ -193,7 +198,7 @@ class EdgePartition[
         currAttr = merge(currAttr, data(i))
       } else {
         if (i > 0) {
-          builder.add(currSrcId, currDstId, currAttr)
+          builder.add(currSrcId, currDstId, localSrcIds(i - 1), localDstIds(i - 1), currAttr)
         }
         currSrcId = srcIds(i)
         currDstId = dstIds(i)
@@ -202,9 +207,9 @@ class EdgePartition[
       i += 1
     }
     if (size > 0) {
-      builder.add(currSrcId, currDstId, currAttr)
+      builder.add(currSrcId, currDstId, localSrcIds(i - 1), localDstIds(i - 1), currAttr)
     }
-    builder.toEdgePartition.withVertices(vertices).withActiveSet(activeSet)
+    builder.toEdgePartition.withActiveSet(activeSet)
   }
 
   /**
@@ -220,7 +225,7 @@ class EdgePartition[
   def innerJoin[ED2: ClassTag, ED3: ClassTag]
       (other: EdgePartition[ED2, _])
       (f: (VertexId, VertexId, ED, ED2) => ED3): EdgePartition[ED3, VD] = {
-    val builder = new EdgePartitionBuilder[ED3, VD]
+    val builder = new VertexPreservingEdgePartitionBuilder[ED3, VD](vertices)
     var i = 0
     var j = 0
     // For i = index of each edge in `this`...
@@ -233,12 +238,12 @@ class EdgePartition[
         while (j < other.size && other.srcIds(j) == srcId && other.dstIds(j) < dstId) { j += 1 }
         if (j < other.size && other.srcIds(j) == srcId && other.dstIds(j) == dstId) {
           // ... run `f` on the matching edge
-          builder.add(srcId, dstId, f(srcId, dstId, this.data(i), other.data(j)))
+          builder.add(srcId, dstId, localSrcIds(i), localDstIds(i), f(srcId, dstId, this.data(i), other.data(j)))
         }
       }
       i += 1
     }
-    builder.toEdgePartition.withVertices(vertices).withActiveSet(activeSet)
+    builder.toEdgePartition.withActiveSet(activeSet)
   }
 
   /**
@@ -268,6 +273,8 @@ class EdgePartition[
     override def next(): Edge[ED] = {
       edge.srcId = srcIds(pos)
       edge.dstId = dstIds(pos)
+      edge.localSrcId = localSrcIds(pos)
+      edge.localDstId = localDstIds(pos)
       edge.attr = data(pos)
       pos += 1
       edge
@@ -326,6 +333,8 @@ class EdgePartition[
       assert(srcIds(pos) == srcId)
       edge.srcId = srcIds(pos)
       edge.dstId = dstIds(pos)
+      edge.localSrcId = localSrcIds(pos)
+      edge.localDstId = localDstIds(pos)
       edge.attr = data(pos)
       pos += 1
       edge
