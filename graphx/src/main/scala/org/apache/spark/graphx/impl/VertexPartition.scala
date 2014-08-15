@@ -269,6 +269,26 @@ class VertexPartition[@specialized(Long, Int, Double) VD: ClassTag](
     new VertexPartition[VD2](index, newValues, newMask)
   }
 
+  def aggregateLocalIdsUsingIndex[VD2: ClassTag](
+      iter: Iterator[Product2[Int, VD2]],
+      reduceFunc: (VD2, VD2) => VD2): VertexPartition[VD2] = {
+    val newMask = new BitSet(capacity)
+    val newValues = new Array[VD2](capacity)
+    iter.foreach { product =>
+      val pos = product._1
+      val vdata = product._2
+      if (pos >= 0) {
+        if (newMask.get(pos)) {
+          newValues(pos) = reduceFunc(newValues(pos), vdata)
+        } else { // otherwise just store the new value
+          newMask.set(pos)
+          newValues(pos) = vdata
+        }
+      }
+    }
+    new VertexPartition[VD2](index, newValues, newMask)
+  }
+
   def replaceActives(iter: Iterator[VertexId]): VertexPartition[VD] = {
     val newActiveSet = new VertexSet
     iter.foreach(newActiveSet.add(_))

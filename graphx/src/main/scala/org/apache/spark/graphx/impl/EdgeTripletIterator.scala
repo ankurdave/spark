@@ -47,11 +47,13 @@ class EdgeTripletIterator[VD: ClassTag, ED: ClassTag](
 
   override def next() = {
     triplet.srcId = edgePartition.srcIds(pos)
-    // assert(vmap.containsKey(e.src.id))
-    triplet.srcAttr = vmap(triplet.srcId)
+    triplet.localSrcId = edgePartition.localSrcIds(pos)
+    triplet.srcAttr = vertexArray(triplet.localSrcId)
+
     triplet.dstId = edgePartition.dstIds(pos)
-    // assert(vmap.containsKey(e.dst.id))
-    triplet.dstAttr = vmap(triplet.dstId)
+    triplet.localDstId = edgePartition.localDstIds(pos)
+    triplet.dstAttr = vertexArray(triplet.localDstId)
+
     triplet.attr = edgePartition.data(pos)
     pos += 1
     triplet

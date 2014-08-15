@@ -29,7 +29,7 @@ class EdgePartitionSuite extends FunSuite {
   test("reverse") {
     val edges = List(Edge(0, 1, 0), Edge(1, 2, 0), Edge(2, 0, 0))
     val reversedEdges = List(Edge(0, 2, 0), Edge(1, 0, 0), Edge(2, 1, 0))
-    val builder = new EdgePartitionBuilder[Int]
+    val builder = new FreshEdgePartitionBuilder[Int]
     for (e <- edges) {
       builder.add(e.srcId, e.dstId, e.attr)
     }
@@ -40,7 +40,7 @@ class EdgePartitionSuite extends FunSuite {
 
   test("map") {
     val edges = List(Edge(0, 1, 0), Edge(1, 2, 0), Edge(2, 0, 0))
-    val builder = new EdgePartitionBuilder[Int]
+    val builder = new FreshEdgePartitionBuilder[Int]
     for (e <- edges) {
       builder.add(e.srcId, e.dstId, e.attr)
     }
@@ -53,7 +53,7 @@ class EdgePartitionSuite extends FunSuite {
     val edges = List(
       Edge(0, 1, 1), Edge(1, 2, 2), Edge(2, 0, 4), Edge(0, 1, 8), Edge(1, 2, 16), Edge(2, 0, 32))
     val groupedEdges = List(Edge(0, 1, 9), Edge(1, 2, 18), Edge(2, 0, 36))
-    val builder = new EdgePartitionBuilder[Int]
+    val builder = new FreshEdgePartitionBuilder[Int]
     for (e <- edges) {
       builder.add(e.srcId, e.dstId, e.attr)
     }
@@ -65,7 +65,7 @@ class EdgePartitionSuite extends FunSuite {
     val edgesFrom0 = List(Edge(0, 1, 0))
     val edgesFrom1 = List(Edge(1, 0, 0), Edge(1, 2, 0))
     val sortedEdges = edgesFrom0 ++ edgesFrom1
-    val builder = new EdgePartitionBuilder[Int]
+    val builder = new FreshEdgePartitionBuilder[Int]
     for (e <- Random.shuffle(sortedEdges)) {
       builder.add(e.srcId, e.dstId, e.attr)
     }
@@ -78,7 +78,7 @@ class EdgePartitionSuite extends FunSuite {
 
   test("innerJoin") {
     def makeEdgePartition[A: ClassTag](xs: Iterable[(Int, Int, A)]): EdgePartition[A] = {
-      val builder = new EdgePartitionBuilder[A]
+      val builder = new FreshEdgePartitionBuilder[A]
       for ((src, dst, attr) <- xs) { builder.add(src: VertexId, dst: VertexId, attr) }
       builder.toEdgePartition
     }

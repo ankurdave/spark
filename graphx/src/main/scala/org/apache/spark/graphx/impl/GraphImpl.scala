@@ -94,7 +94,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     }
       .partitionBy(new HashPartitioner(numPartitions))
       .mapPartitionsWithIndex( { (pid, iter) =>
-        val builder = new EdgePartitionBuilder[ED]()(edTag)
+        val builder = new FreshEdgePartitionBuilder[ED]()(edTag)
         iter.foreach { message =>
           val data = message.data
           builder.add(data._1, data._2, data._3)
@@ -171,7 +171,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     val newEdges = new EdgeRDD[ED](triplets.filter { et =>
       vpred(et.srcId, et.srcAttr) && vpred(et.dstId, et.dstAttr) && epred(et)
     }.mapPartitionsWithIndex( { (pid, iter) =>
-      val builder = new EdgePartitionBuilder[ED]()(edTag)
+      val builder = new FreshEdgePartitionBuilder[ED]()(edTag)
       iter.foreach { et => builder.add(et.srcId, et.dstId, et.attr) }
       val edgePartition = builder.toEdgePartition
       Iterator((pid, edgePartition))
@@ -261,15 +261,16 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         val mapOutputs = edgeIter.flatMap { e =>
           et.set(e)
           if (mapUsesSrcAttr) {
-            et.srcAttr = vPart(e.srcId)
+            et.srcAttr = vPart.values(e.localSrcId)
           }
           if (mapUsesDstAttr) {
-            et.dstAttr = vPart(e.dstId)
+            et.dstAttr = vPart.values(e.localDstId)
           }
-          mapFunc(et)
+          mapFunc(et).map(msg =>
+            (if (msg._1 == et.srcId) et.localSrcId else et.localDstId, msg._2))
         }
         // Note: This doesn't allow users to send messages to arbitrary vertices.
-        vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
+        vPart.aggregateLocalIdsUsingIndex(mapOutputs, reduceFunc).iterator
       } else {
         logError("preAgg in mapReduceTriplets tried to iterate over empty partition.")
         Iterator.empty
@@ -378,7 +379,7 @@ object GraphImpl {
   private def createEdgeRDD[ED: ClassTag](
       edges: RDD[Edge[ED]]): EdgeRDD[ED] = {
     val edgePartitions = edges.mapPartitionsWithIndex { (pid, iter) =>
-      val builder = new EdgePartitionBuilder[ED]
+      val builder = new FreshEdgePartitionBuilder[ED]
       iter.foreach { e =>
         builder.add(e.srcId, e.dstId, e.attr)
       }
