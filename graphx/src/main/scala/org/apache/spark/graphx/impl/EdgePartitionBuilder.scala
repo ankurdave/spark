@@ -27,7 +27,11 @@ import org.apache.spark.util.collection.PrimitiveVector
 private[graphx]
 class FreshEdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag](size: Int = 64) {
   var edges = new PrimitiveVector[Edge[ED]](size)
-  val vertexIds = new VertexIdToIndexMap
+  private var vertexIds: VertexIdToIndexMap = null
+  init()
+  private def init() {
+    vertexIds = new VertexIdToIndexMap
+  }
 
   /** Add a new edge to the partition. */
   def add(src: VertexId, dst: VertexId, d: ED) {
