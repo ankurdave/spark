@@ -49,7 +49,7 @@ class OpenHashSet[@specialized(Long, Int) T: ClassTag](
 
   import OpenHashSet._
 
-  def this(initialCapacity: Int) = this(initialCapacity, 0.7)
+  def this(initialCapacity: Int) = this(initialCapacity, 0.2)
 
   def this() = this(64)
 
