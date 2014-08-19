@@ -253,10 +253,11 @@ class VertexPartition[@specialized(Long, Int, Double) VD: ClassTag](
       reduceFunc: (VD2, VD2) => VD2): VertexPartition[VD2] = {
     val newMask = new BitSet(capacity)
     val newValues = new Array[VD2](capacity)
+    val numVertices = capacity
     iter.foreach { product =>
       val vid = product._1
       val vdata = product._2
-      val pos = index.getPos(vid)
+      val pos = vid.toInt % numVertices //index.getPos(vid)
       if (pos >= 0) {
         if (newMask.get(pos)) {
           newValues(pos) = reduceFunc(newValues(pos), vdata)
