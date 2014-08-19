@@ -18,6 +18,7 @@
 package org.apache.spark.graphx.lib
 
 import scala.reflect.ClassTag
+import org.apache.spark.Logging
 
 import org.apache.spark.graphx._
 
@@ -36,10 +37,12 @@ import org.apache.spark.graphx._
  * (i.e. the `sourceId` less than `destId`). Also the graph must have been partitioned
  * using [[org.apache.spark.graphx.Graph#partitionBy]].
  */
-object TriangleCount {
+object TriangleCount extends Logging {
 
   def run[VD: ClassTag, ED: ClassTag](graph: Graph[VD,ED]): Graph[Int, ED] = {
     // Remove redundant edges
+    
+    logWarning("Entering Triangle Count.")
     val g = graph.groupEdges((a, b) => a).cache()
 
     // Construct set representations of the neighborhoods
@@ -56,6 +59,8 @@ object TriangleCount {
         }
         set
       }
+
+    logWarning("Neighbor sets collected.")
     // join the sets with the graph
     val setGraph: Graph[VertexSet, ED] = g.outerJoinVertices(nbrSets) {
       (vid, _, optSet) => optSet.getOrElse(null)
@@ -82,12 +87,14 @@ object TriangleCount {
     // compute the intersection along edges
     val counters: VertexRDD[Int] = setGraph.mapReduceTriplets(edgeFunc, _ + _)
     // Merge counters with the graph and divide by two since each triangle is counted twice
-    g.outerJoinVertices(counters) {
+    val result = g.outerJoinVertices(counters) {
       (vid, _, optCounter: Option[Int]) =>
         val dblCount = optCounter.getOrElse(0)
         // double count should be even (divisible by two)
         assert((dblCount & 1) == 0)
         dblCount / 2
     }
+    logWarning("Triangle count finished.")
+    result
   } // end of TriangleCount
 }

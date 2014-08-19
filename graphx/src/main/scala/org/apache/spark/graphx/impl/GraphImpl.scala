@@ -20,7 +20,7 @@ package org.apache.spark.graphx.impl
 import scala.reflect.{classTag, ClassTag}
 
 import org.apache.spark.util.collection.PrimitiveVector
-import org.apache.spark.{HashPartitioner, Partitioner}
+import org.apache.spark.{HashPartitioner, Partitioner, Logging}
 import org.apache.spark.SparkContext._
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.impl.GraphImpl._
@@ -29,6 +29,7 @@ import org.apache.spark.graphx.util.BytecodeUtils
 import org.apache.spark.rdd.{ShuffledRDD, RDD}
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.util.ClosureCleaner
+import java.util.NoSuchElementException
 
 
 /**
@@ -47,7 +48,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     @transient val edges: EdgeRDD[ED],
     @transient val routingTable: RoutingTable,
     @transient val replicatedVertexView: ReplicatedVertexView[VD])
-  extends Graph[VD, ED] with Serializable {
+  extends Graph[VD, ED] with Serializable with Logging {
 
   /** Default constructor is provided to support serialization */
   protected def this() = this(null, null, null, null)
@@ -58,9 +59,13 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     val edTag = classTag[ED]
     edges.partitionsRDD.zipPartitions(
       replicatedVertexView.get(true, true), true) { (ePartIter, vPartIter) =>
-      val (pid, ePart) = ePartIter.next()
-      val (_, vPart) = vPartIter.next()
-      new EdgeTripletIterator(vPart.index, vPart.values, ePart)(vdTag, edTag)
+      if (ePartIter.hasNext && vPartIter.hasNext) {
+        val (pid, ePart) = ePartIter.next()
+        val (_, vPart) = vPartIter.next()
+        new EdgeTripletIterator(vPart.index, vPart.values, ePart)(vdTag, edTag)
+      } else {
+        Iterator.empty
+      }
     }
   }
 
@@ -131,22 +136,26 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     val newEdgePartitions =
       edges.partitionsRDD.zipPartitions(replicatedVertexView.get(true, true), true) {
         (ePartIter, vTableReplicatedIter) =>
-        val (ePid, edgePartition) = ePartIter.next()
-        val (vPid, vPart) = vTableReplicatedIter.next()
-        assert(!vTableReplicatedIter.hasNext)
-        assert(ePid == vPid)
-        val et = new EdgeTriplet[VD, ED]
-        val inputIterator = edgePartition.iterator.map { e =>
-          et.set(e)
-          et.srcAttr = vPart(e.srcId)
-          et.dstAttr = vPart(e.dstId)
-          et
-        }
-        // Apply the user function to the vertex partition
-        val outputIter = f(ePid, inputIterator)
-        // Consume the iterator to update the edge attributes
-        val newEdgePartition = edgePartition.map(outputIter)
-        Iterator((ePid, newEdgePartition))
+          if (ePartIter.hasNext && vTableReplicatedIter.hasNext) {
+            val (ePid, edgePartition) = ePartIter.next()
+            val (vPid, vPart) = vTableReplicatedIter.next()
+            assert(!vTableReplicatedIter.hasNext)
+            assert(ePid == vPid)
+            val et = new EdgeTriplet[VD, ED]
+            val inputIterator = edgePartition.iterator.map { e =>
+              et.set(e)
+              et.srcAttr = vPart(e.srcId)
+              et.dstAttr = vPart(e.dstId)
+              et
+            }
+            // Apply the user function to the vertex partition
+            val outputIter = f(ePid, inputIterator)
+            // Consume the iterator to update the edge attributes
+            val newEdgePartition = edgePartition.map(outputIter)
+            Iterator((ePid, newEdgePartition))
+          } else {
+            Iterator.empty
+          }
       }
     new GraphImpl(vertices, new EdgeRDD(newEdgePartitions), routingTable, replicatedVertexView)
   }
@@ -216,50 +225,55 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
     // Map and combine.
     val preAgg = edges.partitionsRDD.zipPartitions(vs, true) { (ePartIter, vPartIter) =>
-      val (ePid, edgePartition) = ePartIter.next()
-      val (vPid, vPart) = vPartIter.next()
-      assert(!vPartIter.hasNext)
-      assert(ePid == vPid)
-      // Choose scan method
-      val activeFraction = vPart.numActives.getOrElse(0) / edgePartition.indexSize.toFloat
-      val edgeIter = activeDirectionOpt match {
-        case Some(EdgeDirection.Both) =>
-          if (activeFraction < 0.8) {
-            edgePartition.indexIterator(srcVertexId => vPart.isActive(srcVertexId))
-              .filter(e => vPart.isActive(e.dstId))
-          } else {
-            edgePartition.iterator.filter(e => vPart.isActive(e.srcId) && vPart.isActive(e.dstId))
-          }
-        case Some(EdgeDirection.Either) =>
-          // TODO: Because we only have a clustered index on the source vertex ID, we can't filter
-          // the index here. Instead we have to scan all edges and then do the filter.
-          edgePartition.iterator.filter(e => vPart.isActive(e.srcId) || vPart.isActive(e.dstId))
-        case Some(EdgeDirection.Out) =>
-          if (activeFraction < 0.8) {
-            edgePartition.indexIterator(srcVertexId => vPart.isActive(srcVertexId))
-          } else {
-            edgePartition.iterator.filter(e => vPart.isActive(e.srcId))
-          }
-        case Some(EdgeDirection.In) =>
-          edgePartition.iterator.filter(e => vPart.isActive(e.dstId))
-        case _ => // None
-          edgePartition.iterator
-      }
+      if (ePartIter.hasNext && vPartIter.hasNext) {
+        val (ePid, edgePartition) = ePartIter.next()
+        val (vPid, vPart) = vPartIter.next()
+        assert(!vPartIter.hasNext)
+        assert(ePid == vPid)
+        // Choose scan method
+        val activeFraction = vPart.numActives.getOrElse(0) / edgePartition.indexSize.toFloat
+        val edgeIter = activeDirectionOpt match {
+          case Some(EdgeDirection.Both) =>
+            if (activeFraction < 0.8) {
+              edgePartition.indexIterator(srcVertexId => vPart.isActive(srcVertexId))
+                .filter(e => vPart.isActive(e.dstId))
+            } else {
+              edgePartition.iterator.filter(e => vPart.isActive(e.srcId) && vPart.isActive(e.dstId))
+            }
+          case Some(EdgeDirection.Either) =>
+            // TODO: Because we only have a clustered index on the source vertex ID, we can't filter
+            // the index here. Instead we have to scan all edges and then do the filter.
+            edgePartition.iterator.filter(e => vPart.isActive(e.srcId) || vPart.isActive(e.dstId))
+          case Some(EdgeDirection.Out) =>
+            if (activeFraction < 0.8) {
+              edgePartition.indexIterator(srcVertexId => vPart.isActive(srcVertexId))
+            } else {
+              edgePartition.iterator.filter(e => vPart.isActive(e.srcId))
+            }
+          case Some(EdgeDirection.In) =>
+            edgePartition.iterator.filter(e => vPart.isActive(e.dstId))
+          case _ => // None
+            edgePartition.iterator
+        }
 
-      // Scan edges and run the map function
-      val et = new EdgeTriplet[VD, ED]
-      val mapOutputs = edgeIter.flatMap { e =>
-        et.set(e)
-        if (mapUsesSrcAttr) {
-          et.srcAttr = vPart(e.srcId)
+        // Scan edges and run the map function
+        val et = new EdgeTriplet[VD, ED]
+        val mapOutputs = edgeIter.flatMap { e =>
+          et.set(e)
+          if (mapUsesSrcAttr) {
+            et.srcAttr = vPart(e.srcId)
+          }
+          if (mapUsesDstAttr) {
+            et.dstAttr = vPart(e.dstId)
+          }
+          mapFunc(et)
         }
-        if (mapUsesDstAttr) {
-          et.dstAttr = vPart(e.dstId)
-        }
-        mapFunc(et)
+        // Note: This doesn't allow users to send messages to arbitrary vertices.
+        vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
+      } else {
+        logError("preAgg in mapReduceTriplets tried to iterate over empty partition.")
+        Iterator.empty
       }
-      // Note: This doesn't allow users to send messages to arbitrary vertices.
-      vPart.aggregateUsingIndex(mapOutputs, reduceFunc).iterator
     }
 
     // do the final reduction reusing the index map
@@ -267,7 +281,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
   } // end of mapReduceTriplets
 
   override def outerJoinVertices[U: ClassTag, VD2: ClassTag]
-      (other: RDD[(VertexId, U)])
+      (other: RDD[(VertexId, U)], destructive: Boolean = false)
       (updateF: (VertexId, VD, Option[U]) => VD2): Graph[VD2, ED] =
   {
     if (classTag[VD] equals classTag[VD2]) {
@@ -276,7 +290,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
       val changedVerts = vertices.asInstanceOf[VertexRDD[VD2]].diff(newVerts)
       val newReplicatedVertexView = new ReplicatedVertexView[VD2](
         changedVerts, edges, routingTable,
-        Some(replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2]]))
+        Some(replicatedVertexView.asInstanceOf[ReplicatedVertexView[VD2]]), destructive)
       new GraphImpl(newVerts, edges, routingTable, newReplicatedVertexView)
     } else {
       // updateF does not preserve type, so we must re-replicate all vertices
@@ -314,8 +328,7 @@ object GraphImpl {
   def apply[VD: ClassTag, ED: ClassTag](
       vertices: RDD[(VertexId, VD)],
       edges: RDD[Edge[ED]],
-      defaultVertexAttr: VD): GraphImpl[VD, ED] =
-  {
+      defaultVertexAttr: VD): GraphImpl[VD, ED] = {
     val edgeRDD = createEdgeRDD(edges).cache()
 
     // Get the set of all vids
@@ -331,6 +344,7 @@ object GraphImpl {
     GraphImpl(vertexRDD, edgeRDD)
   }
 
+  // NOTE(crankshaw) this is the constructor the wiki pipeline uses
   def apply[VD: ClassTag, ED: ClassTag](
       vertices: VertexRDD[VD],
       edges: EdgeRDD[ED]): GraphImpl[VD, ED] = {

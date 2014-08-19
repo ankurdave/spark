@@ -77,8 +77,8 @@ object PageRank extends Logging {
    *
    */
   def run[VD: ClassTag, ED: ClassTag](
-      graph: Graph[VD, ED], numIter: Int, resetProb: Double = 0.15): Graph[Double, Double] =
-  {
+      graph: Graph[VD, ED], numIter: Int, resetProb: Double = 0.15, unpersist: Boolean = true)
+    : Graph[Double, Double] = {
     // Initialize the pagerankGraph with each edge attribute having
     // weight 1/outDegree and each vertex with attribute 1.0.
     val pagerankGraph: Graph[Double, Double] = graph
@@ -100,9 +100,10 @@ object PageRank extends Logging {
     // The initial message received by all vertices in PageRank
     val initialMessage = 0.0
 
+    logWarning("About to execute Pregel.")
     // Execute pregel for a fixed number of iterations.
-    Pregel(pagerankGraph, initialMessage, numIter, activeDirection = EdgeDirection.Out)(
-      vertexProgram, sendMessage, messageCombiner)
+    Pregel(pagerankGraph, initialMessage, numIter, activeDirection = EdgeDirection.Out,
+      unpersist = unpersist)(vertexProgram, sendMessage, messageCombiner)
   }
 
   /**
