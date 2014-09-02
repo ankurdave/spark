@@ -62,7 +62,7 @@ object DataflowPagerank extends Logging {
     }
 
     sc.stop()
-    
+
 
 
     System.exit(0)
@@ -130,7 +130,7 @@ object DataflowPagerank extends Logging {
         .map { case (id: Long, (incomingRanks: Double, myRank: Double)) => (id, alpha*myRank + (1.0-alpha)*incomingRanks)}
 
         ranks.count
-        logWarning("Finished iteration: " + i) 
+        logWarning("Finished iteration: " + i)
     }
     val totalRank = ranks.map{ case(_, r) => r}.reduce(_ + _)
     logWarning(s"Total Pagerank: $totalRank")
@@ -148,9 +148,9 @@ object DataflowPagerank extends Logging {
 
 
     // initialize ccIDs to IDs
-    var ccs: RDD[(Long, Long)] = edges.map{ case (src: Long, dst: Long) => (src, src)}
-      .union(edges.map{ case (src: Long, dst: Long) => (dst, dst)})
-      .distinct()
+    var ccs: RDD[(Long, Long)] =
+      edges.flatMap{ case (src: Long, dst: Long) => Iterator((src, src), (dst, dst)) }
+      .distinct().cache
     var numUpdates = Long.MaxValue
 
     logWarning("Starting CC iterations")
@@ -176,7 +176,7 @@ object DataflowPagerank extends Logging {
       numUpdates = newCCs.join(ccs)
         .filter{case (vid, (newCC, oldCC)) => newCC != oldCC }.count()
 
-      logWarning(s"CC iter $i with $numUpdates updates") 
+      logWarning(s"CC iter $i with $numUpdates updates")
       ccs = newCCs
       i += 1
 
@@ -187,60 +187,67 @@ object DataflowPagerank extends Logging {
   }
 
   def ccSlightlyOpt(sc: SparkContext, fname: String, partitions: Int) {
+    val partitioner = new HashPartitioner(partitions)
+    val lines = sc.textFile(fname)
 
-    val lines = sc.textFile(fname).repartition(partitions)
-    val edges: RDD[(Long, Long)] = lines.map{ s =>
+    val outEdges: RDD[(Long, Long)] = lines.map{ s =>
       val parts = s.split("\\s+")
       (parts(0).toLong, parts(1).toLong)
-    }.cache()
+    }.partitionBy(partitioner).cache()
+    val inEdges = outEdges.map{ case (src, dst) => (dst, src) }
+      .partitionBy(partitioner).cache()
+
     logWarning("CC started")
 
-
     // initialize ccIDs to IDs
-    var ccs: RDD[(Long, Long)] = edges.map{ case (src: Long, dst: Long) => (src, src)}
-      .union(edges.map{ case (src: Long, dst: Long) => (dst, dst)})
-      .distinct()
+    // use in edges to force complete initialization of the edges
+    var ccs: RDD[(Long, Long)] =
+      inEdges.flatMap{ case (dst, src) => Iterator((src, src), (dst, dst)) }
+      .distinct().partitionBy(partitioner).cache()
+
+    ccs.foreachPartition( iter => () )
+    // Very ugly code to clear the in-memory shuffle data
+    ccs.foreachPartition { iter =>
+      SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
+    }
+
     var numUpdates = Long.MaxValue
 
     logWarning("Starting CC iterations")
     var i = 0
     while (numUpdates > 0) {
 
-      val newCCs = edges
-        // get src property
-        .join(ccs)
-        // rekey by dst
-        .map {case (src: Long, (dst: Long, srcCC: Long)) => (dst, (src, srcCC))}
-        // get dst property
-        .join(ccs)
-        // emit min ccId to src and adst
-        .flatMap { case (dst: Long, ((src: Long, srcCC: Long), dstCC)) =>
-            if (srcCC < dstCC)  {
-              Iterator((dst, srcCC))
-            } else if (dstCC < srcCC) {
-              Iterator((src, dstCC))
-            } else {
-              Iterator.empty
-            }
-            // Iterator((src, min(srcCC, dstCC)), (dst, min(srcCC, dstCC)))
-        }
-        .reduceByKey(min(_, _))
+      val outMsgs = ccs.join(outEdges, partitioner).map { case (vid, (cc, dstId)) => (dstId, cc) }
+        .reduceByKey(partitioner, (a,b) => min(a,b)).cache
+      outMsgs.foreach(x => ())
+      outMsgs.foreachPartition { iter =>
+        SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
+      }
+      val inMsgs = ccs.join(inEdges, partitioner).map { case (vid, (cc, srcId)) => (srcId, cc) }
+        .reduceByKey(partitioner, (a,b) => min(a,b)).cache
+      inMsgs.foreach(x => ())
+      inMsgs.foreachPartition { iter =>
+        SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
+      }
+      val newCCs = ccs.leftOuterJoin(outMsgs, partitioner).mapPartitions(
+        iter => iter.map { case (id, (oldCC, msg)) => (id, min(oldCC, msg.getOrElse(oldCC))) },
+        true).leftOuterJoin(inMsgs, partitioner).mapPartitions(
+        iter => iter.map { case (id, (oldCC, msg)) => (id, min(oldCC, msg.getOrElse(oldCC))) },
+        true).cache
 
+      numUpdates = ccs.join(newCCs).filter { case (id, (oldCC, newCC)) => oldCC != newCC }
+        .count()
 
-      ccs = ccs.join(newCCs).map{ case (vid, (oldCC, newCC)) => (vid, min(oldCC, newCC)) }.cache()
-        // .join(ranks)
-        // .map { case (id: Long, (incomingRanks: Double, myRank: Double)) => (id, alpha*myRank + (1.0-alpha)*incomingRanks)}
-
-      // check for convergence
-      // numUpdates = newCCs.join(ccs)
-        // .filter{case (vid, (newCC, oldCC)) => newCC != oldCC }.count()
-      numUpdates = newCCs.count()
-
-      logWarning(s"CC iter $i with $numUpdates updates") 
-      // ccs = newCCs
+      logWarning(s"CC iter $i with $numUpdates updates")
+      // update the connected components
+      ccs = newCCs
+      // Very ugly code to clear the in-memory shuffle data
+      ccs.foreachPartition { iter =>
+        SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
+      }
       i += 1
     }
-    val numCCs = ccs.map{ case(_, id) => id}.distinct().count()
+    val numCCs = ccs.map{ case(_, id) => id }.distinct().count()
     logWarning(s"Num connected components: $numCCs")
   }
 }
