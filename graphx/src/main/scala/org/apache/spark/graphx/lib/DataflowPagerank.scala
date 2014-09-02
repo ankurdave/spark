@@ -205,6 +205,12 @@ object DataflowPagerank extends Logging {
       inEdges.flatMap{ case (dst: Long, src: Long) => Iterator((src, src), (dst, dst)) }
       .distinct().partitionBy(partitioner).cache()
 
+    ccs.foreachPartition( iter => () )
+    // Very ugly code to clear the in-memory shuffle data
+    ccs.foreachPartition { iter =>
+      SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
+    }
+
     var numUpdates = Long.MaxValue
 
     logWarning("Starting CC iterations")
@@ -220,9 +226,14 @@ object DataflowPagerank extends Logging {
         .count()
       numUpdates = newCCs.count()
 
+
       logWarning(s"CC iter $i with $numUpdates updates")
       // update the connected components
       ccs = newCCs
+      // Very ugly code to clear the in-memory shuffle data
+      ccs.foreachPartition { iter =>
+        SparkEnv.get.blockManager.shuffleBlockManager.removeAllShuffleStuff()
+      }
       i += 1
     }
     val numCCs = ccs.map{ case(_, id) => id }.distinct().count()
