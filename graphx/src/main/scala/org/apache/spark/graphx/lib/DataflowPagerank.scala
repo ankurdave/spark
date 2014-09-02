@@ -202,7 +202,7 @@ object DataflowPagerank extends Logging {
     // initialize ccIDs to IDs
     // use in edges to force complete initialization of the edges
     var ccs: RDD[(Long, Long)] =
-      inEdges.flatMap{ case (dst: Long, src: Long) => Iterator((src, src), (dst, dst)) }
+      inEdges.flatMap{ case (dst, src) => Iterator((src, src), (dst, dst)) }
       .distinct().partitionBy(partitioner).cache()
 
     ccs.foreachPartition( iter => () )
@@ -224,8 +224,7 @@ object DataflowPagerank extends Logging {
 
       numUpdates = ccs.join(newCCs).filter { case (id, (oldCC, newCC)) => oldCC != newCC }
         .count()
-      numUpdates = newCCs.count()
-
+      //numUpdates = newCCs.count()
 
       logWarning(s"CC iter $i with $numUpdates updates")
       // update the connected components
