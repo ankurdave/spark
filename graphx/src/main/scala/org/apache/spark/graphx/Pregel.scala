@@ -19,7 +19,7 @@ package org.apache.spark.graphx
 
 import scala.reflect.ClassTag
 import org.apache.spark.Logging
-
+import org.apache.spark.storage.StorageLevel
 
 /**
  * Implements a Pregel-like bulk-synchronous message-passing API.
@@ -54,6 +54,20 @@ import org.apache.spark.Logging
  *
  */
 object Pregel extends Logging {
+
+  def apply[VD: ClassTag, ED: ClassTag, A: ClassTag]
+     (graph: Graph[VD, ED],
+      initialMsg: A,
+      maxIterations: Int = Int.MaxValue,
+      activeDirection: EdgeDirection = EdgeDirection.Either)
+     (vprog: (VertexId, VD, A) => VD,
+      sendMsg: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
+      mergeMsg: (A, A) => A)
+    : Graph[VD, ED] =
+  {
+    customStorageLevel(graph, initialMsg, maxIterations, activeDirection)(
+      vprog, sendMsg, mergeMsg, iteration => None)
+  }
 
   /**
    * Execute a Pregel-like iterative vertex-parallel abstraction.  The
@@ -106,17 +120,23 @@ object Pregel extends Logging {
    * A.  ''This function must be commutative and associative and
    * ideally the size of A should not increase.''
    *
+   * @param storageLevel a user supplied function that is run at the beginning of every iteration
+   * to determine whether to change the graph's storage level. It is passed the current iteration
+   * number between 0 and `maxIterations - 1`. If it returns None, the storage level will not be
+   * changed from the previous iteration.
+   *
    * @return the resulting graph at the end of the computation
    *
    */
-  def apply[VD: ClassTag, ED: ClassTag, A: ClassTag]
+  def customStorageLevel[VD: ClassTag, ED: ClassTag, A: ClassTag]
      (graph: Graph[VD, ED],
       initialMsg: A,
       maxIterations: Int = Int.MaxValue,
       activeDirection: EdgeDirection = EdgeDirection.Either)
      (vprog: (VertexId, VD, A) => VD,
       sendMsg: EdgeTriplet[VD, ED] => Iterator[(VertexId, A)],
-      mergeMsg: (A, A) => A)
+      mergeMsg: (A, A) => A,
+      storageLevel: Int => Option[StorageLevel])
     : Graph[VD, ED] =
   {
     var g = graph.mapVertices((vid, vdata) => vprog(vid, vdata, initialMsg)).cache()
@@ -127,6 +147,14 @@ object Pregel extends Logging {
     var prevG: Graph[VD, ED] = null
     var i = 0
     while (activeMessages > 0 && i < maxIterations) {
+      // Change the graph's target storage level if necessary. Calls to `cache()` on derived
+      // datasets below will use this storage level.
+      val newLevelOpt = storageLevel(i)
+      if (newLevelOpt.nonEmpty) {
+        logInfo(s"Pregel iteration $i: changing storage level to ${newLevelOpt.get}")
+        g = g.withTargetStorageLevel(newLevelOpt.get)
+      }
+
       // Receive the messages. Vertices that didn't get any messages do not appear in newVerts.
       val newVerts = g.vertices.innerJoin(messages)(vprog).cache()
       // Update the graph with the new vertices.

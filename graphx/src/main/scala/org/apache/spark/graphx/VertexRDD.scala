@@ -102,7 +102,13 @@ class VertexRDD[@specialized VD: ClassTag](
 
   /** Persists the vertex partitions at `targetStorageLevel`, which defaults to MEMORY_ONLY. */
   override def cache(): this.type = {
-    partitionsRDD.persist(targetStorageLevel)
+    val curLevel = partitionsRDD.getStorageLevel
+    if (curLevel == StorageLevel.NONE || curLevel == targetStorageLevel) {
+      partitionsRDD.persist(targetStorageLevel)
+    } else {
+      logWarning(s"VertexRDD is already stored at ${partitionsRDD.getStorageLevel}; not " +
+        s"changing to $targetStorageLevel")
+    }
     this
   }
 

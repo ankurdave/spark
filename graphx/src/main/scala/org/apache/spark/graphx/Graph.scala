@@ -80,6 +80,15 @@ abstract class Graph[VD: ClassTag, ED: ClassTag] protected () extends Serializab
   @transient val triplets: RDD[EdgeTriplet[VD, ED]]
 
   /**
+   * Changes the target storage level of the vertices and edges. Operations on the returned graph
+   * will preserve this storage level, and calling `cache()` will use this storage level.
+   *
+   * This does not actually trigger a cache; to do this, call
+   * [[org.apache.spark.graphx.Graph#cache]] on the returned Graph.
+   */
+  def withTargetStorageLevel(newLevel: StorageLevel): Graph[VD, ED]
+
+  /**
    * Caches the vertices and edges associated with this graph at the specified storage level,
    * ignoring any target storage levels previously set.
    *

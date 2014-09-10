@@ -54,6 +54,12 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     })
   }
 
+  override def withTargetStorageLevel(newLevel: StorageLevel): Graph[VD, ED] = {
+    new GraphImpl(
+      vertices.withTargetStorageLevel(newLevel),
+      replicatedVertexView.withEdges(replicatedVertexView.edges.withTargetStorageLevel(newLevel)))
+  }
+
   override def persist(newLevel: StorageLevel): Graph[VD, ED] = {
     vertices.persist(newLevel)
     replicatedVertexView.edges.persist(newLevel)
