@@ -81,4 +81,21 @@ object IndexedRDD {
       preservesPartitioning = true)
     new IndexedRDD(partitions)
   }
+
+  /**
+   * Constructs an IndexedRDD from an RDD of pairs, merging duplicate keys by applying a binary
+   * operator to a start value and all values with the same key. The name comes from the similar
+   * `foldLeft` operator in the Scala collections library.
+   *
+   * @param z the start value
+   * @param f the binary operator to use for merging
+   */
+  def createWithFoldLeft[A: ClassTag, B: ClassTag](
+      elems: RDD[(Id, A)], partitioner: Partitioner, z: => B, f: (B, A) => B): IndexedRDD[B] = {
+    val partitioned: RDD[(Id, A)] = elems.partitionBy(partitioner)
+    val partitions = partitioned.mapPartitions(
+      iter => Iterator(IndexedRDDPartition.createWithFoldLeft(iter, z, f)),
+      preservesPartitioning = true)
+    new IndexedRDD(partitions)
+  }
 }

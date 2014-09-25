@@ -133,6 +133,13 @@ class IndexedRDDSuite extends FunSuite with SharedSparkContext {
     assert(ps.aggregateUsingIndex[Int](messages, _ + _).collect.toSet ===
       (0 to n).map(x => (x.toLong, if (x % 2 == 0) 2 else 1)).toSet)
   }
+
+  test("IndexedRDD.createWithFoldLeft") {
+    val elems = sc.parallelize(List((0L, "1"), (0L, "2"), (1L, "3")), 2)
+    val part = new HashPartitioner(elems.partitions.size)
+    val sums = IndexedRDD.createWithFoldLeft[String, Int](elems, part, 0, (x, s) => x + s.toInt)
+    assert(sums.collect.toSet === Set((0L, 3), (1L, 3)))
+  }
 }
 
 // Declared outside of test suite to avoid closure capture
