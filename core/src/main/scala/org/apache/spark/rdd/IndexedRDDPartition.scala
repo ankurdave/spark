@@ -89,4 +89,26 @@ private[spark] object IndexedRDDPartition {
       ImmutableVector.fromArray(map.values),
       map.keySet.getBitSet.toImmutableBitSet)
   }
+
+  /**
+   * Constructs an IndexedRDDPartition from an iterator of pairs, merging duplicate keys by applying
+   * a binary operator to a start value and all values with the same key. The name comes from the
+   * similar `foldLeft` operator in the Scala collections library.
+   *
+   * @param z the start value
+   * @param f the binary operator to use for merging
+   */
+  def createWithFoldLeft[A: ClassTag, B: ClassTag](iter: Iterator[(Id, A)], z: => B, f: (B, A) => B)
+    : IndexedRDDPartition[B] = {
+    val map = new PrimitiveKeyOpenHashMap[Id, B]
+    iter.foreach { pair =>
+      val id = pair._1
+      val a = pair._2
+      map.changeValue(id, f(z, a), b => f(b, a))
+    }
+    new IndexedRDDPartition(
+      ImmutableLongOpenHashSet.fromLongOpenHashSet(map.keySet),
+      ImmutableVector.fromArray(map.values),
+      map.keySet.getBitSet.toImmutableBitSet)
+  }
 }
