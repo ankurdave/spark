@@ -131,6 +131,15 @@ private[spark] trait IndexedRDDLike[
     zipPartitionsWithOther(updates)(new MultiputZipper(merge))
   }
 
+  /**
+   * Updates the keys in `kvs` to their corresponding values, running `merge` on old and new values
+   * if necessary. Returns a new IndexedRDD that reflects the modification.
+   */
+  def multiputRDD(kvs: RDD[(Id, V)], merge: (Id, V, V) => V): Self[V] = {
+    val updates = kvs.partitionBy(self.partitioner.get)
+    zipPartitionsWithOther(updates)(new MultiputZipper(merge))
+  }
+
   /** Deletes the specified keys. Returns a new IndexedRDD that reflects the deletions. */
   def delete(ks: Array[Id]): Self[V] = {
     val deletions = self.context.parallelize(ks.map(k => (k, ()))).partitionBy(self.partitioner.get)
