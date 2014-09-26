@@ -24,6 +24,7 @@ import scala.reflect.ClassTag
 import org.apache.spark._
 import org.apache.spark.SparkContext._
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.util.collection.ImmutableBitSet
 
 import IndexedRDD.Id
 
@@ -134,6 +135,14 @@ private[spark] trait IndexedRDDLike[
   def delete(ks: Array[Id]): Self[V] = {
     val deletions = self.context.parallelize(ks.map(k => (k, ()))).partitionBy(self.partitioner.get)
     zipPartitionsWithOther(deletions)(new DeleteZipper)
+  }
+
+  /**
+   * Deletes all keys, but preserves the index. Returns a new IndexedRDD with no elements but which,
+   * once elements are re-added, might be efficiently joinable with this one.
+   */
+  def deleteAll(): Self[V] = {
+    mapIndexedRDDPartitions(p => p.withMask(new ImmutableBitSet(p.mask.numBits)))
   }
 
   /** Applies a function to each partition of this IndexedRDD. */
