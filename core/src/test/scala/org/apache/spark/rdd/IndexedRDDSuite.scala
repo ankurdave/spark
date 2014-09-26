@@ -86,6 +86,24 @@ class IndexedRDDSuite extends FunSuite with SharedSparkContext {
     assert(ps.diff(flipEvens).map(_._2).collect().toList.sorted === (2 to n by 2).toList.sorted)
   }
 
+  test("fullOuterJoin") {
+    val common = IndexedRDD(sc.parallelize((0 to 200).map(x => (x.toLong, x)), 5)).cache()
+    val a = common.filter(kv => kv._1 < 100).cache()
+    val b = common.filter(kv => kv._1 >= 50).cache()
+    val sum = a.fullOuterJoin(b) { (id, aOpt, bOpt) => aOpt.getOrElse(0) + bOpt.getOrElse(0) }
+    val expected = ((0 to 50).map(x => (x.toLong, x)) ++
+      (50 to 100).map(x => (x.toLong, x * 2)) ++
+      (100 to 200).map(x => (x.toLong, x))).toSet
+
+    // fullOuterJoin with another IndexedRDD with the same index
+    assert(sum.collect.toSet === expected)
+
+    // fullOuterJoin with another IndexedRDD with a different index
+    val b2 = IndexedRDD(b.map(identity))
+    val sum2 = a.fullOuterJoin(b2) { (id, aOpt, bOpt) => aOpt.getOrElse(0) + bOpt.getOrElse(0) }
+    assert(sum2.collect.toSet === expected)
+  }
+
   test("leftJoin") {
     val n = 100
     val ps = pairs(sc, n).cache()
