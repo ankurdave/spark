@@ -269,7 +269,7 @@ private[spark] trait IndexedRDDPartitionLike[
         newValues(i) = f(self.index.getValue(i), None, Some(other.values(i)))
       }
 
-      this.withValues(ImmutableVector.fromArray(newValues))
+      this.withValues(ImmutableVector.fromArray(newValues)).withMask(newMask)
     }
   }
 
