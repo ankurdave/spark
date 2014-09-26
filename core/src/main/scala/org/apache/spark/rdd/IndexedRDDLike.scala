@@ -183,6 +183,14 @@ private[spark] trait IndexedRDDLike[
   def diff(other: Self[V]): Self[V] =
     this.zipIndexedRDDPartitions(other)(new DiffZipper)
 
+  /** Joins `this` with `other`, running `f` on the values of all keys in both sets. */
+  def fullOuterJoin[V2: ClassTag, W: ClassTag]
+      (other: Self[V2])
+      (f: (Id, Option[V], Option[V2]) => W): Self[W] = {
+    require(self.partitioner == other.partitioner)
+    this.zipIndexedRDDPartitions(other)(new FullOuterJoinZipper(f))
+  }
+
   /**
    * Left outer joins `this` with `other`, running `f` on the values of corresponding keys. Because
    * values in `this` with no corresponding entries in `other` are preserved, `f` cannot change the
@@ -266,6 +274,15 @@ private[spark] trait IndexedRDDLike[
       val thisPart = thisIter.next()
       val otherPart = otherIter.next()
       Iterator(thisPart.diff(otherPart))
+    }
+  }
+
+  private class FullOuterJoinZipper[V2: ClassTag, W: ClassTag](f: (Id, Option[V], Option[V2]) => W)
+      extends ZipPartitionsFunction[V2, W] with Serializable {
+    def apply(thisIter: Iterator[P[V]], otherIter: Iterator[P[V2]]): Iterator[P[W]] = {
+      val thisPart = thisIter.next()
+      val otherPart = otherIter.next()
+      Iterator(thisPart.fullOuterJoin(otherPart)(f))
     }
   }
 
