@@ -22,6 +22,7 @@ import scala.language.higherKinds
 import scala.reflect.ClassTag
 
 import org.apache.spark.Logging
+import org.apache.spark.util.collection.PrimitiveVector
 import org.apache.spark.util.collection.BitSet
 import org.apache.spark.util.collection.ImmutableBitSet
 import org.apache.spark.util.collection.ImmutableLongOpenHashSet
@@ -103,7 +104,7 @@ private[spark] trait IndexedRDDPartitionLike[
     }
   }
 
-  private def multiputIterator(kvs: Iterator[(Id, V)], merge: (Id, V, V) => V): Self[V] = {
+  private def multiputIterator(kvs: Iterator[Product2[Id, V]], merge: (Id, V, V) => V): Self[V] = {
     var newIndex = self.index
     var newValues = self.values
     var newMask = self.mask
@@ -431,16 +432,7 @@ private[spark] trait IndexedRDDPartitionLike[
    */
   def createUsingIndex[V2: ClassTag](iter: Iterator[Product2[Id, V2]])
     : Self[V2] = {
-    val newMask = new BitSet(self.capacity)
-    val newValues = new Array[V2](self.capacity)
-    iter.foreach { pair =>
-      val pos = self.index.getPos(pair._1)
-      if (pos >= 0) {
-        newMask.set(pos)
-        newValues(pos) = pair._2
-      }
-    }
-    this.withValues(ImmutableVector.fromArray(newValues)).withMask(newMask.toImmutableBitSet)
+    aggregateUsingIndex(iter, (a, b) => a)
   }
 
   /**
@@ -452,6 +444,7 @@ private[spark] trait IndexedRDDPartitionLike[
       reduceFunc: (V2, V2) => V2): Self[V2] = {
     val newMask = new BitSet(self.capacity)
     val newValues = new Array[V2](self.capacity)
+    var newElements = new PrimitiveVector[Product2[Id, V2]]
     iter.foreach { product =>
       val id = product._1
       val value = product._2
@@ -463,9 +456,20 @@ private[spark] trait IndexedRDDPartitionLike[
           newMask.set(pos)
           newValues(pos) = value
         }
+      } else {
+        newElements += product
       }
     }
-    this.withValues(ImmutableVector.fromArray(newValues)).withMask(newMask.toImmutableBitSet)
+
+    val aggregated = this.withValues(ImmutableVector.fromArray(newValues))
+      .withMask(newMask.toImmutableBitSet)
+    if (newElements.length > 0) {
+      val newElementsIter = newElements.trim().array.iterator
+      aggregated.multiputIterator(newElementsIter, (id, a, b) => throw new Exception(
+        "merge function was called but newElementsIter should only contain new elements"))
+    } else {
+      aggregated
+    }
   }
 
   /**
