@@ -379,6 +379,37 @@ class BasicOperationsSuite extends TestSuiteBase {
     testOperation(inputData, updateStateOperation, outputData, true)
   }
 
+  test("sparseUpdateStateByKey") {
+    val inputData =
+      Seq(
+        Seq(1L),
+        Seq(1L, 2L),
+        Seq(1L, 2L, 3L),
+        Seq(1L, 2L),
+        Seq(1L),
+        Seq()
+      )
+
+    val outputData =
+      Seq(
+        Seq((1L, 1)),
+        Seq((1L, 2), (2L, 1)),
+        Seq((1L, 3), (2L, 2), (3L, 1)),
+        Seq((1L, 4), (2L, 3), (3L, 1)),
+        Seq((1L, 5), (2L, 3), (3L, 1)),
+        Seq((1L, 5), (2L, 3), (3L, 1))
+      )
+
+    val updateStateOperation = (s: DStream[Long]) => {
+      val updateFunc = (values: Seq[Int], state: Option[Int]) => {
+        Some(values.sum + state.getOrElse(0))
+      }
+      s.map(x => (x, 1)).sparseUpdateStateByKey[Int](updateFunc)
+    }
+
+    testOperation(inputData, updateStateOperation, outputData, true)
+  }
+
   test("slice") {
     val ssc = new StreamingContext(conf, Seconds(1))
     val input = Seq(Seq(1), Seq(2), Seq(3), Seq(4))
