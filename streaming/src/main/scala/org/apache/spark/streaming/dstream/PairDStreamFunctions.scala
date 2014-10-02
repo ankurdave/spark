@@ -416,6 +416,24 @@ class PairDStreamFunctions[K, V](self: DStream[(K,V)])
      new StateDStream(self, ssc.sc.clean(updateFunc), partitioner, rememberPartitioner)
   }
 
+  def sparseUpdateStateByKey[S: ClassTag](
+      updateFunc: (Seq[V], Option[S]) => Option[S]): DStream[(Long, S)] = {
+    sparseUpdateStateByKey(updateFunc, defaultPartitioner())
+  }
+
+  def sparseUpdateStateByKey[S: ClassTag](
+      updateFunc: (Seq[V], Option[S]) => Option[S],
+      numPartitions: Int): DStream[(Long, S)] = {
+    sparseUpdateStateByKey(updateFunc, defaultPartitioner(numPartitions))
+  }
+
+  def sparseUpdateStateByKey[S: ClassTag](
+      updateFunc: (Seq[V], Option[S]) => Option[S],
+      partitioner: Partitioner): DStream[(Long, S)] = {
+    new SparselyUpdatedStateDStream(self.asInstanceOf[DStream[(Long, V)]],
+      ssc.sc.clean(updateFunc), partitioner)
+  }
+
   /**
    * Return a new DStream by applying a map function to the value of each key-value pairs in
    * 'this' DStream without changing the key.
