@@ -191,6 +191,13 @@ private[spark] trait IndexedRDDLike[
     this.zipIndexedRDDPartitions(other)(new FullOuterJoinZipper(f))
   }
 
+  /** Joins `this` with `other`, running `f` on the values of all keys in both sets. */
+  def fullOuterJoinRDD[V2: ClassTag, W: ClassTag]
+      (other: RDD[(Id, V2)])
+      (mergeValues: (V2, V2) => V2, f: (Id, Option[V], Option[V2]) => W): Self[W] = {
+    fullOuterJoin(aggregateUsingIndex(other, mergeValues))(f)
+  }
+
   /**
    * Left outer joins `this` with `other`, running `f` on the values of corresponding keys. Because
    * values in `this` with no corresponding entries in `other` are preserved, `f` cannot change the

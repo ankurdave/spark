@@ -86,7 +86,7 @@ class IndexedRDDSuite extends FunSuite with SharedSparkContext {
     assert(ps.diff(flipEvens).map(_._2).collect().toList.sorted === (2 to n by 2).toList.sorted)
   }
 
-  test("fullOuterJoin") {
+  test("fullOuterJoin, fullOuterJoinRDD") {
     val n = 200
     val bStart = 50
     val aEnd = 100
@@ -105,6 +105,11 @@ class IndexedRDDSuite extends FunSuite with SharedSparkContext {
     val b2 = IndexedRDD(b.map(identity))
     val sum2 = a.fullOuterJoin(b2) { (id, aOpt, bOpt) => aOpt.getOrElse(0) + bOpt.getOrElse(0) }
     assert(sum2.collect.toSet === expected)
+
+    // fullOuterJoin with another RDD
+    val sum3 = a.fullOuterJoinRDD(b)(_ + _,
+      (id, aOpt, bOpt) => aOpt.getOrElse(0) + bOpt.getOrElse(0))
+    assert(sum3.collect.toSet === expected)
   }
 
   test("leftJoin") {
