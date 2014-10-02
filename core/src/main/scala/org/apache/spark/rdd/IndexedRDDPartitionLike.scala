@@ -41,9 +41,7 @@ import IndexedRDDPartition.Index
  * @tparam Self the type of the implementing container. This allows transformation methods on any
  * implementing container to yield a result of the same type.
  */
-private[spark] trait IndexedRDDPartitionLike[
-    @specialized(Long, Int, Double) V,
-    Self[X] <: IndexedRDDPartitionLike[X, Self]]
+private[spark] trait IndexedRDDPartitionLike[V, Self[X] <: IndexedRDDPartitionLike[X, Self]]
   extends Serializable with Logging {
 
   /** A generator for ClassTags of the value type V. */
