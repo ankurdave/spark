@@ -91,8 +91,18 @@ private[spark] class PatriciaTreeIndexedRDDPartition[V](
     result
   }
 
-  override def multiput(kvs: Seq[(Id, V)], merge: (Id, V, V) => V): PatriciaTreeIndexedRDDPartition[V] = {
-    this.withMap(map.unionWith(LongMap(kvs: _*), merge))
+  override def multiput(
+      kvs: Iterator[(Id, V)], merge: (Id, V, V) => V): PatriciaTreeIndexedRDDPartition[V] = {
+    this.withMap(map.unionWith(iteratorToMap(kvs), merge))
+  }
+
+  override def multiput[U: ClassTag](
+      kvs: Iterator[(Id, U)], insert: (Id, U) => V, merge: (Id, V, U) => V)
+    : PatriciaTreeIndexedRDDPartition[V] = {
+    val other = iteratorToMap(kvs)
+    val onlyOther = (other -- map.keys).transform[V](insert)
+    val both = map.intersectionWith[U, V](other, merge)
+    this.withMap(map ++ onlyOther ++ both)
   }
 
   override def delete(ks: Array[Id]): PatriciaTreeIndexedRDDPartition[V] = {
@@ -165,12 +175,12 @@ private[spark] class PatriciaTreeIndexedRDDPartition[V](
   }
 
   override def innerJoinKeepLeft(iter: Iterator[Product2[Id, V]]): PatriciaTreeIndexedRDDPartition[V] = {
-    this.withMap(LongMap(iter.map(kv => (kv._1, kv._2)).toSeq: _*).intersection(map))
+    this.withMap(iteratorToMap(iter).intersection(map))
   }
 
   override def createUsingIndex[V2: ClassTag](iter: Iterator[Product2[Id, V2]])
     : PatriciaTreeIndexedRDDPartition[V2] = {
-    this.withMap(LongMap(iter.map(kv => (kv._1, kv._2)).toSeq: _*))
+    this.withMap(iteratorToMap(iter))
   }
 
   override def aggregateUsingIndex[V2: ClassTag](
@@ -181,6 +191,10 @@ private[spark] class PatriciaTreeIndexedRDDPartition[V](
 
   override def reindex(): PatriciaTreeIndexedRDDPartition[V] = {
     this
+  }
+
+  private def iteratorToMap[V2: ClassTag](iter: Iterator[Product2[Id, V2]]): LongMap[V2] = {
+    iter.foldLeft(LongMap.empty[V2])((x, y) => x.updated(y._1, y._2))
   }
 }
 

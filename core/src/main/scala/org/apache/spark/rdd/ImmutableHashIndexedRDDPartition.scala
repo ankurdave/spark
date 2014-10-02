@@ -91,18 +91,27 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
   }
 
   override def multiput(
-      kvs: Seq[(Id, V)], merge: (Id, V, V) => V): ImmutableHashIndexedRDDPartition[V] = {
-    if (kvs.forall(kv => self.isDefined(kv._1))) {
+      kvs: Iterator[(Id, V)], merge: (Id, V, V) => V): ImmutableHashIndexedRDDPartition[V] = {
+    multiput[V](kvs, (id, v) => v, merge)
+  }
+
+  override def multiput[U: ClassTag](
+      kvs: Iterator[(Id, U)],
+      insert: (Id, U) => V,
+      merge: (Id, V, U) => V): ImmutableHashIndexedRDDPartition[V] = {
+    val kvsArray = kvs.toArray
+    if (kvsArray.forall(kv => self.isDefined(kv._1))) {
       // Pure updates can be implemented by modifying only the values
-      join(kvs.iterator)(merge)
+      join(kvsArray.iterator)(merge)
     } else {
-      multiputIterator(kvs.iterator, merge)
+      multiputIterator(kvsArray.iterator, insert, merge)
     }
   }
 
-  private def multiputIterator(
-      kvs: Iterator[Product2[Id, V]],
-      merge: (Id, V, V) => V): ImmutableHashIndexedRDDPartition[V] = {
+  private def multiputIterator[U: ClassTag](
+      kvs: Iterator[Product2[Id, U]],
+      insert: (Id, U) => V,
+      merge: (Id, V, U) => V): ImmutableHashIndexedRDDPartition[V] = {
     var newIndex = self.index
     var newValues = self.values
     var newMask = self.mask
@@ -128,13 +137,14 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       if ((newIndex.focus & OpenHashSet.NONEXISTENCE_MASK) != 0) {
         // This is a new key - need to update index
         val pos = newIndex.focus & OpenHashSet.POSITION_MASK
-        newValues = newValues.updated(pos, otherValue)
+        newValues = newValues.updated(pos, insert(id, otherValue))
         newMask = newMask.set(pos)
         newIndex = newIndex.rehashIfNeeded(grow, move)
       } else {
         // Existing key - just need to set value and ensure it appears in newMask
         val pos = newIndex.focus
-        val newValue = if (newMask.get(pos)) merge(id, newValues(pos), otherValue) else otherValue
+        val newValue =
+          if (newMask.get(pos)) merge(id, newValues(pos), otherValue) else insert(id, otherValue)
         newValues = newValues.updated(pos, newValue)
         newMask = newMask.set(pos)
       }
@@ -239,7 +249,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       }
 
       this.withValues(ImmutableVector.fromArray(newValues))
-        .multiputIterator(newOtherIter, (id, a, b) => throw new Exception(
+        .multiputIterator[W](newOtherIter, (id, v) => v, (id, a, b) => throw new Exception(
           "merge function was called but newOtherIter should only contain new elements"))
     } else {
       val newValues = new Array[W](self.capacity)
@@ -425,7 +435,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       .withMask(newMask.toImmutableBitSet)
     if (newElements.length > 0) {
       val newElementsIter = newElements.trim().array.iterator
-      aggregated.multiputIterator(newElementsIter, (id, a, b) => throw new Exception(
+      aggregated.multiputIterator[V2](newElementsIter, (id, v) => v, (id, a, b) => throw new Exception(
         "merge function was called but newElementsIter should only contain new elements"))
     } else {
       aggregated

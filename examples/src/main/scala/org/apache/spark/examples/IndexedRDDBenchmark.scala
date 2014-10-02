@@ -220,11 +220,11 @@ object IndexedRDDBenchmark {
       indexed.innerJoin(incomparableIndexed) { (id, a, b) => a + b }.count()
     }
 
-    time("multiputRDD - subset", trials) {
-      indexed.multiputRDD(subsetRDD, (id, a, b) => a + b).count()
+    time("multiput - subset", trials) {
+      indexed.multiput(subsetRDD, (id, a, b) => a + b).count()
     }
-    time("multiputRDD - no subset", trials) {
-      indexed.multiputRDD(incomparableRDD, (id, a, b) => a + b).count()
+    time("multiput - no subset", trials) {
+      indexed.multiput(incomparableRDD, (id, a, b) => a + b).count()
     }
 
     indexed.unpersist()

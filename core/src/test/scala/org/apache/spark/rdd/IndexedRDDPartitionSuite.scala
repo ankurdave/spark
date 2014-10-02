@@ -51,11 +51,11 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
   test("multiput") {
     val vp = create(Iterator((0L, 0), (1L, 1), (2L, 2)))
     def sum(id: IndexedRDD.Id, a: Int, b: Int) = a + b
-    assert(vp.multiput(Seq(0L -> 1, 1L -> 1), sum).iterator.toSet ===
+    assert(vp.multiput(Iterator(0L -> 1, 1L -> 1), sum).iterator.toSet ===
       Set(0L -> 1, 1L -> 2, 2L -> 2))
-    assert(vp.multiput(Seq(0L -> 1, 100L -> 1), sum).iterator.toSet ===
+    assert(vp.multiput(Iterator(0L -> 1, 100L -> 1), sum).iterator.toSet ===
       Set(0L -> 1, 1L -> 1, 2L -> 2, 100L -> 1))
-    assert(vp.multiput(Seq(100L -> 1), (id, a, b) => fail()).iterator.toSet ===
+    assert(vp.multiput(Iterator(100L -> 1), (id, a, b) => fail()).iterator.toSet ===
       Set(0L -> 0, 1L -> 1, 2L -> 2, 100L -> 1))
   }
 
