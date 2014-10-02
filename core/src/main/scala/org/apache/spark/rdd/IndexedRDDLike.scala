@@ -130,6 +130,12 @@ private[spark] trait IndexedRDDLike[
     zipPartitionsWithOther(updates)(new MultiputZipper(merge))
   }
 
+  def multiputRDDWithDeletion[U: ClassTag](
+      kvs: RDD[(Id, U)], insert: (Id, U) => Option[V], merge: (Id, V, U) => Option[V]): Self[V] = {
+    val updates = kvs.partitionBy(self.partitioner.get)
+    zipPartitionsWithOther(updates)(new MultiputInsertDeleteZipper(insert, merge))
+  }
+
   /** Deletes the specified keys. Returns a new IndexedRDD that reflects the deletions. */
   def delete(ks: Array[Id]): Self[V] = {
     val deletions = self.context.parallelize(ks.map(k => (k, ()))).partitionBy(self.partitioner.get)
@@ -265,6 +271,15 @@ private[spark] trait IndexedRDDLike[
       val thisPart = thisIter.next()
       val updates = otherIter.toSeq
       Iterator(thisPart.multiput(updates, merge))
+    }
+  }
+
+  private class MultiputInsertDeleteZipper[U: ClassTag](
+      insert: (Id, U) => Option[V], merge: (Id, V, U) => Option[V])
+      extends OtherZipPartitionsFunction[U, V] with Serializable {
+    def apply(thisIter: Iterator[P[V]], otherIter: Iterator[(Id, U)]): Iterator[P[V]] = {
+      val thisPart = thisIter.next()
+      Iterator(thisPart.multiputWithDeletion(otherIter, insert, merge))
     }
   }
 
