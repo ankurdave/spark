@@ -19,21 +19,27 @@ package org.apache.spark.graphx.impl
 
 import scala.reflect.ClassTag
 
-import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
+import org.apache.spark.rdd.IndexedRDDPartition
+import org.apache.spark.rdd.IndexedRDDPartition.Index
+import org.apache.spark.rdd.IndexedRDDPartitionLike
+import org.apache.spark.util.collection.ImmutableBitSet
+import org.apache.spark.util.collection.ImmutableLongOpenHashSet
+import org.apache.spark.util.collection.ImmutableVector
+import org.apache.spark.util.collection.PrimitiveKeyOpenHashMap
+import org.apache.spark.util.collection.PrimitiveVector
 
 import org.apache.spark.graphx._
-import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 
 /** Stores vertex attributes to ship to an edge partition. */
-private[graphx]
-class VertexAttributeBlock[VD: ClassTag](val vids: Array[VertexId], val attrs: Array[VD])
+private[graphx] class VertexAttributeBlock[@specialized(Long, Int, Double) VD: ClassTag](
+    val vids: Array[VertexId],
+    val attrs: Array[VD])
   extends Serializable {
   def iterator: Iterator[(VertexId, VD)] =
     (0 until vids.size).iterator.map { i => (vids(i), attrs(i)) }
 }
 
-private[graphx]
-object ShippableVertexPartition {
+private[graphx] object ShippableVertexPartition {
   /** Construct a `ShippableVertexPartition` from the given vertices without any routing table. */
   def apply[VD: ClassTag](iter: Iterator[(VertexId, VD)]): ShippableVertexPartition[VD] =
     apply(iter, RoutingTablePartition.empty, null.asInstanceOf[VD], (a, b) => a)
@@ -55,7 +61,7 @@ object ShippableVertexPartition {
   def apply[VD: ClassTag](
       iter: Iterator[(VertexId, VD)], routingTable: RoutingTablePartition, defaultVal: VD,
       mergeFunc: (VD, VD) => VD): ShippableVertexPartition[VD] = {
-    val map = new GraphXPrimitiveKeyOpenHashMap[VertexId, VD]
+    val map = new PrimitiveKeyOpenHashMap[VertexId, VD]
     // Merge the given vertices using mergeFunc
     iter.foreach { pair =>
       map.setMerge(pair._1, pair._2, mergeFunc)
@@ -65,28 +71,11 @@ object ShippableVertexPartition {
       map.changeValue(vid, defaultVal, identity)
     }
 
-    new ShippableVertexPartition(map.keySet, map._values, map.keySet.getBitSet, routingTable)
-  }
-
-  import scala.language.implicitConversions
-
-  /**
-   * Implicit conversion to allow invoking `VertexPartitionBase` operations directly on a
-   * `ShippableVertexPartition`.
-   */
-  implicit def shippablePartitionToOps[VD: ClassTag](partition: ShippableVertexPartition[VD]) =
-    new ShippableVertexPartitionOps(partition)
-
-  /**
-   * Implicit evidence that `ShippableVertexPartition` is a member of the
-   * `VertexPartitionBaseOpsConstructor` typeclass. This enables invoking `VertexPartitionBase`
-   * operations on a `ShippableVertexPartition` via an evidence parameter, as in
-   * [[VertexPartitionBaseOps]].
-   */
-  implicit object ShippableVertexPartitionOpsConstructor
-    extends VertexPartitionBaseOpsConstructor[ShippableVertexPartition] {
-    def toOps[VD: ClassTag](partition: ShippableVertexPartition[VD])
-      : VertexPartitionBaseOps[VD, ShippableVertexPartition] = shippablePartitionToOps(partition)
+    new ShippableVertexPartition(
+      ImmutableLongOpenHashSet.fromLongOpenHashSet(map.keySet),
+      ImmutableVector.fromArray(map.values),
+      map.keySet.getBitSet.toImmutableBitSet,
+      routingTable)
   }
 }
 
@@ -94,17 +83,31 @@ object ShippableVertexPartition {
  * A map from vertex id to vertex attribute that additionally stores edge partition join sites for
  * each vertex attribute, enabling joining with an [[org.apache.spark.graphx.EdgeRDD]].
  */
-private[graphx]
-class ShippableVertexPartition[VD: ClassTag](
-    val index: VertexIdToIndexMap,
-    val values: Array[VD],
-    val mask: BitSet,
+private[graphx] class ShippableVertexPartition[@specialized(Long, Int, Double) VD](
+    val index: Index,
+    val values: ImmutableVector[VD],
+    val mask: ImmutableBitSet,
     val routingTable: RoutingTablePartition)
-  extends VertexPartitionBase[VD] {
+   (implicit val vTag: ClassTag[VD])
+  extends IndexedRDDPartitionLike[VD, ShippableVertexPartition] {
+
+  def self: ShippableVertexPartition[VD] = this
+
+  def withIndex(index: Index): ShippableVertexPartition[VD] = {
+    new ShippableVertexPartition(index, values, mask, routingTable)
+  }
+
+  def withValues[VD2: ClassTag](values: ImmutableVector[VD2]): ShippableVertexPartition[VD2] = {
+    new ShippableVertexPartition(index, values, mask, routingTable)
+  }
+
+  def withMask(mask: ImmutableBitSet): ShippableVertexPartition[VD] = {
+    new ShippableVertexPartition(index, values, mask, routingTable)
+  }
 
   /** Return a new ShippableVertexPartition with the specified routing table. */
-  def withRoutingTable(routingTable_ : RoutingTablePartition): ShippableVertexPartition[VD] = {
-    new ShippableVertexPartition(index, values, mask, routingTable_)
+  def withRoutingTable(routingTable: RoutingTablePartition): ShippableVertexPartition[VD] = {
+    new ShippableVertexPartition(index, values, mask, routingTable)
   }
 
   /**
@@ -147,21 +150,5 @@ class ShippableVertexPartition[VD: ClassTag](
       }
       (pid, vids.trim().array)
     }
-  }
-}
-
-private[graphx] class ShippableVertexPartitionOps[VD: ClassTag](self: ShippableVertexPartition[VD])
-  extends VertexPartitionBaseOps[VD, ShippableVertexPartition](self) {
-
-  def withIndex(index: VertexIdToIndexMap): ShippableVertexPartition[VD] = {
-    new ShippableVertexPartition(index, self.values, self.mask, self.routingTable)
-  }
-
-  def withValues[VD2: ClassTag](values: Array[VD2]): ShippableVertexPartition[VD2] = {
-    new ShippableVertexPartition(self.index, values, self.mask, self.routingTable)
-  }
-
-  def withMask(mask: BitSet): ShippableVertexPartition[VD] = {
-    new ShippableVertexPartition(self.index, self.values, mask, self.routingTable)
   }
 }

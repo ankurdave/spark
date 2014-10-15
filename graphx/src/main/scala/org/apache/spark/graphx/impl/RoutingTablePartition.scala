@@ -22,10 +22,11 @@ import scala.reflect.ClassTag
 import org.apache.spark.Partitioner
 import org.apache.spark.rdd.RDD
 import org.apache.spark.rdd.ShuffledRDD
-import org.apache.spark.util.collection.{BitSet, PrimitiveVector}
+import org.apache.spark.util.collection.BitSet
+import org.apache.spark.util.collection.PrimitiveKeyOpenHashMap
+import org.apache.spark.util.collection.PrimitiveVector
 
 import org.apache.spark.graphx._
-import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 
 import org.apache.spark.graphx.impl.RoutingTablePartition.RoutingTableMessage
 
@@ -73,7 +74,7 @@ object RoutingTablePartition {
     : Iterator[RoutingTableMessage] = {
     // Determine which positions each vertex id appears in using a map where the low 2 bits
     // represent src and dst
-    val map = new GraphXPrimitiveKeyOpenHashMap[VertexId, Byte]
+    val map = new PrimitiveKeyOpenHashMap[VertexId, Byte]
     edgePartition.srcIds.iterator.foreach { srcId =>
       map.changeValue(srcId, 0x1, (b: Byte) => (b | 0x1).toByte)
     }

@@ -69,7 +69,7 @@ object IndexedRDD {
 
   /** Constructs an IndexedRDD from an RDD of pairs, merging duplicate keys arbitrarily. */
   def apply[V: ClassTag](elems: RDD[(Id, V)], partitioner: Partitioner): IndexedRDD[V] = {
-    IndexedRDD(elems, partitioner, (a, b) => b)
+    IndexedRDD(elems, partitioner, (a, b) => a)
   }
 
   /** Constructs an IndexedRDD from an RDD of pairs. */
