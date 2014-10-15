@@ -53,9 +53,9 @@ class VertexRDDSuite extends FunSuite with LocalSparkContext {
       val verts = vertices(sc, n).cache()
       val flipEvens = verts.mapValues(x => if (x % 2 == 0) -x else x).cache()
       // diff should keep only the changed vertices
-      assert(verts.diff(flipEvens).map(_._2).collect().toSet === (2 to n by 2).map(-_).toSet)
+      assert(flipEvens.diff(verts).map(_._2).collect().toSet === (2 to n by 2).map(-_).toSet)
       // diff should keep the vertex values from `other`
-      assert(flipEvens.diff(verts).map(_._2).collect().toSet === (2 to n by 2).toSet)
+      assert(verts.diff(flipEvens).map(_._2).collect().toSet === (2 to n by 2).toSet)
     }
   }
 
