@@ -23,10 +23,12 @@ import org.scalatest.FunSuite
 
 import org.apache.spark._
 
-class IndexedRDDSuite extends FunSuite with SharedSparkContext {
+trait IndexedRDDSuite extends FunSuite with SharedSparkContext {
+
+  def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]): IndexedRDD[V]
 
   def pairs(sc: SparkContext, n: Int) = {
-    IndexedRDD(sc.parallelize((0 to n).map(x => (x.toLong, x)), 5))
+    create(sc.parallelize((0 to n).map(x => (x.toLong, x)), 5))
   }
 
   test("get, multiget") {
@@ -90,7 +92,7 @@ class IndexedRDDSuite extends FunSuite with SharedSparkContext {
     val n = 200
     val bStart = 50
     val aEnd = 100
-    val common = IndexedRDD(sc.parallelize((0 until n).map(x => (x.toLong, x)), 5)).cache()
+    val common = create(sc.parallelize((0 until n).map(x => (x.toLong, x)), 5)).cache()
     val a = common.filter(kv => kv._1 < aEnd).cache()
     val b = common.filter(kv => kv._1 >= bStart).cache()
     val sum = a.fullOuterJoin(b) { (id, aOpt, bOpt) => aOpt.getOrElse(0) + bOpt.getOrElse(0) }
@@ -102,7 +104,7 @@ class IndexedRDDSuite extends FunSuite with SharedSparkContext {
     assert(sum.collect.toSet === expected)
 
     // fullOuterJoin with another IndexedRDD with a different index
-    val b2 = IndexedRDD(b.map(identity))
+    val b2 = create(b.map(identity))
     val sum2 = a.fullOuterJoin(b2) { (id, aOpt, bOpt) => aOpt.getOrElse(0) + bOpt.getOrElse(0) }
     assert(sum2.collect.toSet === expected)
   }
