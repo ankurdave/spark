@@ -37,7 +37,7 @@ import IndexedRDD.Id
  * @tparam V the value associated with each entry in the set.
  */
 @Experimental
-class ImmutableHashIndexedRDD[@specialized(Long, Int, Double) V: ClassTag]
+class ImmutableHashIndexedRDD[V: ClassTag]
     (override val partitionsRDD: RDD[ImmutableHashIndexedRDDPartition[V]])
   extends RDD[(Id, V)](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD)))
   with IndexedRDD[V, ImmutableHashIndexedRDDPartition, ImmutableHashIndexedRDD] {

@@ -42,7 +42,7 @@ import ImmutableHashIndexedRDDPartition.Index
  *
  * @tparam V the value associated with each entry in the set.
  */
-private[spark] class ImmutableHashIndexedRDDPartition[@specialized(Long, Int, Double) V](
+private[spark] class ImmutableHashIndexedRDDPartition[V](
     val index: Index,
     val values: ImmutableVector[V],
     val mask: ImmutableBitSet)

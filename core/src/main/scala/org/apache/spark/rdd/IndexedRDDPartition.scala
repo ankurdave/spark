@@ -41,7 +41,7 @@ import IndexedRDD.Id
  * implementing container to yield a result of the same type.
  */
 private[spark] trait IndexedRDDPartition[
-    @specialized(Long, Int, Double) V,
+    V,
     Self[X] <: IndexedRDDPartition[X, Self]]
   extends Serializable with Logging {
 

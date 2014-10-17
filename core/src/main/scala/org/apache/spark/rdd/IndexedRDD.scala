@@ -37,7 +37,7 @@ import IndexedRDD.Id
  * implementing container to yield a result of the same type.
  */
 private[spark] trait IndexedRDD[
-    @specialized(Long, Int, Double) V,
+    V,
     P[X] <: IndexedRDDPartition[X, P],
     Self[X] <: IndexedRDD[X, P, Self]]
   extends RDD[(Id, V)] {
