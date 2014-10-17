@@ -17,14 +17,15 @@
 
 package org.apache.spark.rdd
 
-import org.scalatest.FunSuite
+import scala.reflect.ClassTag
 
 import org.apache.spark._
+import org.scalatest.FunSuite
 
-class ImmutableHashIndexedRDDSuite extends IndexedRDDSuite {
+class ImmutableHashIndexedRDDSuite
+  extends IndexedRDDSuite[ImmutableHashIndexedRDDPartition, ImmutableHashIndexedRDD] {
 
-  override def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]): ImmutableHashIndexedRDD[V] = {
+  override def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]) =
     ImmutableHashIndexedRDD(rdd)
-  }
 
 }

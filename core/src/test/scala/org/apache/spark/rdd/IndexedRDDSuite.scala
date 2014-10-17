@@ -18,14 +18,18 @@
 package org.apache.spark.rdd
 
 import scala.collection.immutable.LongMap
-
-import org.scalatest.FunSuite
+import scala.language.higherKinds
+import scala.reflect.ClassTag
 
 import org.apache.spark._
+import org.scalatest.FunSuite
 
-trait IndexedRDDSuite extends FunSuite with SharedSparkContext {
+trait IndexedRDDSuite[
+    P[X] <: IndexedRDDPartition[X, P],
+    IndexedRDDType[X] <: IndexedRDD[X, P, IndexedRDDType]]
+  extends FunSuite with SharedSparkContext {
 
-  def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]): IndexedRDD[V]
+  def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]): IndexedRDDType[V]
 
   def pairs(sc: SparkContext, n: Int) = {
     create(sc.parallelize((0 to n).map(x => (x.toLong, x)), 5))

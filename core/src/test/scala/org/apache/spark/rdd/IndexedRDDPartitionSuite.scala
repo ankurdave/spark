@@ -18,6 +18,8 @@
 package org.apache.spark.rdd
 
 import scala.collection.immutable.LongMap
+import scala.language.higherKinds
+import scala.reflect.ClassTag
 
 import org.scalatest.FunSuite
 
@@ -25,10 +27,14 @@ import org.apache.spark.SparkConf
 import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.serializer.KryoSerializer
 
-class IndexedRDDPartitionSuite extends FunSuite {
+trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSuite {
+
+  def create[V: ClassTag](iter: Iterator[(IndexedRDD.Id, V)]): P[V]
+
+  implicit def pTag[V2]: ClassTag[P[V2]]
 
   test("isDefined, filter") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1))).filter { (vid, attr) => vid == 0 }
+    val vp = create(Iterator((0L, 1), (1L, 1))).filter { (vid, attr) => vid == 0 }
     assert(vp.isDefined(0))
     assert(!vp.isDefined(1))
     assert(!vp.isDefined(2))
@@ -36,14 +42,14 @@ class IndexedRDDPartitionSuite extends FunSuite {
   }
 
   test("multiget") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1)))
     assert(vp.multiget(Array(-1L, 0L, 1L, 2L)) === LongMap(0L -> 1, 1L -> 1))
     val vpFiltered = vp.filter { (vid, attr) => vid == 0 }
     assert(vpFiltered.multiget(Array(-1L, 0L, 1L, 2L)) === LongMap(0L -> 1))
   }
 
   test("multiput") {
-    val vp = IndexedRDDPartition(Iterator((0L, 0), (1L, 1), (2L, 2)))
+    val vp = create(Iterator((0L, 0), (1L, 1), (2L, 2)))
     def sum(id: IndexedRDD.Id, a: Int, b: Int) = a + b
     assert(vp.multiput(Seq(0L -> 1, 1L -> 1), sum).iterator.toSet ===
       Set(0L -> 1, 1L -> 2, 2L -> 2))
@@ -54,21 +60,21 @@ class IndexedRDDPartitionSuite extends FunSuite {
   }
 
   test("delete") {
-    val vp = IndexedRDDPartition(Iterator((0L, 0), (1L, 1), (2L, 2)))
+    val vp = create(Iterator((0L, 0), (1L, 1), (2L, 2)))
     assert(vp.delete(Array(0L)).iterator.toSet === Set(1L -> 1, 2L -> 2))
     assert(vp.delete(Array(3L)).iterator.toSet === Set(0L -> 0, 1L -> 1, 2L -> 2))
   }
 
   test("mapValues") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1))).mapValues { (vid, attr) => 2 }
+    val vp = create(Iterator((0L, 1), (1L, 1))).mapValues { (vid, attr) => 2 }
     assert(vp(0) === 2)
   }
 
   test("diff") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val vp2 = vp.filter { (vid, attr) => vid <= 1 }
     val vp3a = vp.mapValues { (vid, attr) => 2 }
-    val vp3b = IndexedRDDPartition(vp3a.iterator)
+    val vp3b = create(vp3a.iterator)
     // diff with same index
     val diff1 = vp3a.diff(vp2)
     assert(diff1(0) === 2)
@@ -84,9 +90,9 @@ class IndexedRDDPartitionSuite extends FunSuite {
   }
 
   test("leftJoin") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val vp2a = vp.filter { (vid, attr) => vid <= 1 }.mapValues { (vid, attr) => 2 }
-    val vp2b = IndexedRDDPartition(vp2a.iterator)
+    val vp2b = create(vp2a.iterator)
     // leftJoin with same index
     val join1 = vp.leftJoin(vp2a) { (vid, a, bOpt) => bOpt.getOrElse(a) }
     assert(join1.iterator.toSet === Set((0L, 2), (1L, 2), (2L, 1)))
@@ -99,9 +105,9 @@ class IndexedRDDPartitionSuite extends FunSuite {
   }
 
   test("join") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val vp2a = vp.filter { (vid, attr) => vid <= 1 }.mapValues { (vid, attr) => 2 }
-    val vp2b = IndexedRDDPartition(vp2a.iterator)
+    val vp2b = create(vp2a.iterator)
     // join with same index
     val join1 = vp.join(vp2a) { (vid, a, b) => b }
     assert(join1.iterator.toSet === Set((0L, 2), (1L, 2), (2L, 1)))
@@ -114,9 +120,9 @@ class IndexedRDDPartitionSuite extends FunSuite {
   }
 
   test("innerJoin") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val vp2a = vp.filter { (vid, attr) => vid <= 1 }.mapValues { (vid, attr) => 2 }
-    val vp2b = IndexedRDDPartition(vp2a.iterator)
+    val vp2b = create(vp2a.iterator)
     // innerJoin with same index
     val join1 = vp.innerJoin(vp2a) { (vid, a, b) => b }
     assert(join1.iterator.toSet === Set((0L, 2), (1L, 2)))
@@ -129,23 +135,21 @@ class IndexedRDDPartitionSuite extends FunSuite {
   }
 
   test("createUsingIndex") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
 
     // No new elements
     val elems1 = List((0L, 2), (2L, 2))
     val vp1 = vp.createUsingIndex(elems1.iterator)
     assert(vp1.iterator.toSet === elems1.toSet)
-    assert(vp.index === vp1.index)
 
     // New elements
     val elems2 = List((0L, 2), (2L, 2), (3L, 2))
     val vp2 = vp.createUsingIndex(elems2.iterator)
     assert(vp2.iterator.toSet === elems2.toSet)
-    assert(vp.index != vp2.index)
-}
+  }
 
   test("innerJoinKeepLeft") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val elems = List((0L, 2), (2L, 2), (3L, 2))
     val vp2 = vp.innerJoinKeepLeft(elems.iterator)
     assert(vp2.iterator.toSet === Set((0L, 2), (2L, 2)))
@@ -153,39 +157,36 @@ class IndexedRDDPartitionSuite extends FunSuite {
   }
 
   test("aggregateUsingIndex") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
 
     // No new elements
     val messages1 = List((0L, "a"), (2L, "b"), (0L, "c"))
     val vp1 = vp.aggregateUsingIndex[String](messages1.iterator, _ + _)
     assert(vp1.iterator.toSet === Set((0L, "ac"), (2L, "b")))
-    assert(vp.index === vp1.index)
 
     // No new elements
     val messages2 = List((0L, "a"), (2L, "b"), (0L, "c"), (3L, "d"))
     val vp2 = vp.aggregateUsingIndex[String](messages2.iterator, _ + _)
     assert(vp2.iterator.toSet === Set((0L, "ac"), (2L, "b"), (3L, "d")))
-    assert(vp.index != vp2.index)
-}
+  }
 
   test("reindex") {
-    val vp = IndexedRDDPartition(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val vp2 = vp.filter { (vid, attr) => vid <= 1 }
     val vp3 = vp2.reindex()
     assert(vp2.iterator.toSet === vp3.iterator.toSet)
     assert(vp2(2) === 1)
-    assert(vp3.index.getPos(2) === -1)
   }
 
   test("serialization") {
     val elems = Set((0L, 1), (1L, 1), (2L, 1))
-    val vp = IndexedRDDPartition(elems.iterator)
+    val vp = create(elems.iterator)
     val javaSer = new JavaSerializer(new SparkConf())
     val kryoSer = new KryoSerializer(new SparkConf()
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer"))
 
     for (ser <- List(javaSer, kryoSer); s = ser.newInstance()) {
-      val vpSer: IndexedRDDPartition[Int] = s.deserialize(s.serialize(vp))
+      val vpSer: P[Int] = s.deserialize[P[Int]](s.serialize(vp))
       assert(vpSer.iterator.toSet === elems)
     }
   }
