@@ -121,7 +121,15 @@ private[spark] trait IndexedRDD[
    * if necessary. Returns a new IndexedRDD that reflects the modification.
    */
   def multiput(kvs: Map[Id, V], merge: (Id, V, V) => V): Self[V] = {
-    val updates = self.context.parallelize(kvs.toSeq).partitionBy(self.partitioner.get)
+    multiputRDD(self.context.parallelize(kvs.toSeq), merge)
+  }
+
+  /**
+   * Updates the keys in `kvs` to their corresponding values, running `merge` on old and new values
+   * if necessary. Returns a new IndexedRDD that reflects the modification.
+   */
+  def multiputRDD(kvs: RDD[(Id, V)], merge: (Id, V, V) => V): Self[V] = {
+    val updates = kvs.partitionBy(self.partitioner.get)
     zipPartitionsWithOther(updates)(new MultiputZipper(merge))
   }
 
