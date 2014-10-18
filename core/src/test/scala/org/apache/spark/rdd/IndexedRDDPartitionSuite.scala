@@ -79,13 +79,11 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
     val diff1 = vp3a.diff(vp2)
     assert(diff1(0) === 2)
     assert(diff1(1) === 2)
-    assert(diff1(2) === 2)
     assert(!diff1.isDefined(2))
     // diff with different indexes
     val diff2 = vp3b.diff(vp2)
     assert(diff2(0) === 2)
     assert(diff2(1) === 2)
-    assert(diff2(2) === 2)
     assert(!diff2.isDefined(2))
   }
 
@@ -153,7 +151,6 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
     val elems = List((0L, 2), (2L, 2), (3L, 2))
     val vp2 = vp.innerJoinKeepLeft(elems.iterator)
     assert(vp2.iterator.toSet === Set((0L, 2), (2L, 2)))
-    assert(vp2(1) === 1)
   }
 
   test("aggregateUsingIndex") {
@@ -175,7 +172,6 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
     val vp2 = vp.filter { (vid, attr) => vid <= 1 }
     val vp3 = vp2.reindex()
     assert(vp2.iterator.toSet === vp3.iterator.toSet)
-    assert(vp2(2) === 1)
   }
 
   test("serialization") {

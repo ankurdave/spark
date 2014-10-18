@@ -31,6 +31,33 @@ class ImmutableHashIndexedRDDPartitionSuite
   override def pTag[V2]: ClassTag[ImmutableHashIndexedRDDPartition[V2]] =
     classTag[ImmutableHashIndexedRDDPartition[V2]]
 
+  test("diff preserves hidden elements") {
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val vp2 = vp.filter { (vid, attr) => vid <= 1 }
+    val vp3a = vp.mapValues { (vid, attr) => 2 }
+    val vp3b = create(vp3a.iterator)
+    // diff with same index
+    val diff1 = vp3a.diff(vp2)
+    assert(diff1(0) === 2)
+    assert(diff1(1) === 2)
+    assert(diff1(2) === 2)
+    assert(!diff1.isDefined(2))
+    // diff with different indexes
+    val diff2 = vp3b.diff(vp2)
+    assert(diff2(0) === 2)
+    assert(diff2(1) === 2)
+    assert(diff2(2) === 2)
+    assert(!diff2.isDefined(2))
+  }
+
+  test("innerJoinKeepLeft preserves hidden elements") {
+    val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
+    val elems = List((0L, 2), (2L, 2), (3L, 2))
+    val vp2 = vp.innerJoinKeepLeft(elems.iterator)
+    assert(vp2.iterator.toSet === Set((0L, 2), (2L, 2)))
+    assert(vp2(1) === 1)
+  }
+
   test("index reuse - createUsingIndex") {
     val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
 
