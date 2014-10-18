@@ -193,41 +193,70 @@ private[spark] trait IndexedRDD[
    */
   def fullOuterJoin[V2: ClassTag, W: ClassTag]
       (other: Self[V2])
-      (f: (Id, Option[V], Option[V2]) => W): Self[W] = {
-    require(self.partitioner == other.partitioner)
+      (f: (Id, Option[V], Option[V2]) => W): Self[W] =
     this.zipIndexedRDDPartitions(other)(new FullOuterJoinZipper(f))
+
+
+  /**
+   * Left outer joins `this` with the IndexedRDD `other`, running `f` on the values of corresponding
+   * keys. Because values in `this` with no corresponding entries in `other` are preserved, `f`
+   * cannot change the value type.
+   */
+  def join[U: ClassTag]
+      (other: Self[U])(f: (Id, V, U) => V): Self[V] = {
+    if (self.partitioner == other.partitioner) {
+      this.zipIndexedRDDPartitions(other)(new JoinZipper(f))
+    } else {
+      join(other: RDD[(Id, U)])(f)
+    }
   }
 
   /**
-   * Left outer joins `this` with `other`, running `f` on the values of corresponding keys. Because
-   * values in `this` with no corresponding entries in `other` are preserved, `f` cannot change the
-   * value type.
+   * Left outer joins `this` with the plain RDD `other`, running `f` on the values of corresponding
+   * keys. Because values in `this` with no corresponding entries in `other` are preserved, `f`
+   * cannot change the value type.
    */
   def join[U: ClassTag]
-      (other: RDD[(Id, U)])(f: (Id, V, U) => V): Self[V] = other match {
-    case other: IndexedRDD[_, _, _] if self.partitioner == other.partitioner =>
-      this.zipIndexedRDDPartitions(other.asInstanceOf[Self[U]])(new JoinZipper(f))
-    case _ =>
-      this.zipPartitionsWithOther(other)(new OtherJoinZipper(f))
+      (other: RDD[(Id, U)])(f: (Id, V, U) => V): Self[V] = {
+    this.zipPartitionsWithOther(other)(new OtherJoinZipper(f))
   }
 
-  /** Left outer joins `this` with `other`, running `f` on all values of `this`. */
+  /** Left outer joins `this` with the IndexedRDD `other`, running `f` on all values of `this`. */
   def leftJoin[V2: ClassTag, V3: ClassTag]
-      (other: RDD[(Id, V2)])(f: (Id, V, Option[V2]) => V3): Self[V3] = other match {
-    case other: IndexedRDD[_, _, _] if self.partitioner == other.partitioner =>
-      this.zipIndexedRDDPartitions(other.asInstanceOf[Self[V2]])(new LeftJoinZipper(f))
-    case _ =>
-      this.zipPartitionsWithOther(other)(new OtherLeftJoinZipper(f))
+      (other: Self[V2])(f: (Id, V, Option[V2]) => V3): Self[V3] = {
+    if (self.partitioner == other.partitioner) {
+      this.zipIndexedRDDPartitions(other)(new LeftJoinZipper(f))
+    } else {
+      leftJoin(other: RDD[(Id, V2)])(f)
+    }
   }
 
-  /** Inner joins `this` with `other`, running `f` on the values of corresponding keys. */
-  def innerJoin[V2: ClassTag, V3: ClassTag](other: RDD[(Id, V2)])
-      (f: (Id, V, V2) => V3): Self[V3] = other match {
-    case other: IndexedRDD[_, _, _] if self.partitioner == other.partitioner =>
-      this.zipIndexedRDDPartitions(other.asInstanceOf[Self[V2]])(new InnerJoinZipper(f))
-    case _ =>
-      this.zipPartitionsWithOther(other)(new OtherInnerJoinZipper(f))
+  /** Left outer joins `this` with the plain RDD `other`, running `f` on all values of `this`. */
+  def leftJoin[V2: ClassTag, V3: ClassTag]
+      (other: RDD[(Id, V2)])(f: (Id, V, Option[V2]) => V3): Self[V3] = {
+    this.zipPartitionsWithOther(other)(new OtherLeftJoinZipper(f))
   }
+
+  /**
+   * Inner joins `this` with the IndexedRDD `other`, running `f` on the values of corresponding
+   * keys.
+   */
+  def innerJoin[V2: ClassTag, V3: ClassTag]
+      (other: Self[V2])(f: (Id, V, V2) => V3): Self[V3] = {
+    if (self.partitioner == other.partitioner) {
+      this.zipIndexedRDDPartitions(other)(new InnerJoinZipper(f))
+    } else {
+      innerJoin(other: RDD[(Id, V2)])(f)
+    }
+  }
+
+  /**
+   * Inner joins `this` with the plain RDD `other`, running `f` on the values of corresponding
+   * keys.
+   */
+  def innerJoin[V2: ClassTag, V3: ClassTag]
+      (other: RDD[(Id, V2)])(f: (Id, V, V2) => V3): Self[V3] =
+    this.zipPartitionsWithOther(other)(new OtherInnerJoinZipper(f))
 
   /**
    * Creates a new IndexedRDD with values from `messages` that shares an index with `this`, merging
