@@ -46,10 +46,10 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
     val index: Index,
     val values: ImmutableVector[V],
     val mask: ImmutableBitSet)
-   (implicit val vTag: ClassTag[V])
+   (override implicit val vTag: ClassTag[V])
   extends IndexedRDDPartition[V, ImmutableHashIndexedRDDPartition] with Logging {
 
-  def self: ImmutableHashIndexedRDDPartition[V] = this
+  override def self: ImmutableHashIndexedRDDPartition[V] = this
 
   def withIndex(index: Index): ImmutableHashIndexedRDDPartition[V] = {
     new ImmutableHashIndexedRDDPartition(index, values, mask)
@@ -90,7 +90,8 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
     result
   }
 
-  override def multiput(kvs: Seq[(Id, V)], merge: (Id, V, V) => V): ImmutableHashIndexedRDDPartition[V] = {
+  override def multiput(
+      kvs: Seq[(Id, V)], merge: (Id, V, V) => V): ImmutableHashIndexedRDDPartition[V] = {
     if (kvs.forall(kv => self.isDefined(kv._1))) {
       // Pure updates can be implemented by modifying only the values
       join(kvs.iterator)(merge)
@@ -100,7 +101,8 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
   }
 
   private def multiputIterator(
-      kvs: Iterator[Product2[Id, V]], merge: (Id, V, V) => V): ImmutableHashIndexedRDDPartition[V] = {
+      kvs: Iterator[Product2[Id, V]],
+      merge: (Id, V, V) => V): ImmutableHashIndexedRDDPartition[V] = {
     var newIndex = self.index
     var newValues = self.values
     var newMask = self.mask
@@ -298,7 +300,9 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       val id = kv._1
       val otherValue = kv._2
       val i = self.index.getPos(kv._1)
-      newValues = newValues.updated(i, f(id, self.values(i), otherValue))
+      if (i != -1) {
+        newValues = newValues.updated(i, f(id, self.values(i), otherValue))
+      }
     }
     this.withValues(newValues)
   }
