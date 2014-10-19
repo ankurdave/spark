@@ -28,4 +28,9 @@ class ImmutableHashIndexedRDDSuite
   override def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]) =
     ImmutableHashIndexedRDD(rdd)
 
+  override def createWithFoldLeft[A: ClassTag, B: ClassTag](
+      rdd: RDD[(IndexedRDD.Id, A)], partitioner: Partitioner,
+      z: => B, f: (B, A) => B) =
+    ImmutableHashIndexedRDD.createWithFoldLeft(rdd, partitioner, z, f)
+
 }

@@ -30,6 +30,9 @@ trait IndexedRDDSuite[
   extends FunSuite with SharedSparkContext {
 
   def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]): IndexedRDDType[V]
+  def createWithFoldLeft[A: ClassTag, B: ClassTag](
+      rdd: RDD[(IndexedRDD.Id, A)], partitioner: Partitioner,
+      z: => B, f: (B, A) => B): IndexedRDDType[B]
 
   def pairs(sc: SparkContext, n: Int) = {
     create(sc.parallelize((0 to n).map(x => (x.toLong, x)), 5))
@@ -166,6 +169,13 @@ trait IndexedRDDSuite[
     val messagesWithNew = List((0L, 1), (-1L, 1))
     assert(ps.aggregateUsingIndex[Int](sc.parallelize(messagesWithNew), _ + _).collect.toSet ===
       messagesWithNew.toSet)
+  }
+
+  test("IndexedRDD.createWithFoldLeft") {
+    val elems = sc.parallelize(List((0L, "1"), (0L, "2"), (1L, "3")), 2)
+    val part = new HashPartitioner(elems.partitions.size)
+    val sums = createWithFoldLeft[String, Int](elems, part, 0, (x, s) => x + s.toInt)
+    assert(sums.collect.toSet === Set((0L, 3), (1L, 3)))
   }
 }
 

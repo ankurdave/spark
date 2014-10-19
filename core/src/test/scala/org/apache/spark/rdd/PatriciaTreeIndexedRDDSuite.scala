@@ -28,4 +28,9 @@ class PatriciaTreeIndexedRDDSuite
   override def create[V: ClassTag](rdd: RDD[(IndexedRDD.Id, V)]) =
     PatriciaTreeIndexedRDD(rdd)
 
+  override def createWithFoldLeft[A: ClassTag, B: ClassTag](
+      rdd: RDD[(IndexedRDD.Id, A)], partitioner: Partitioner,
+      z: => B, f: (B, A) => B) =
+    PatriciaTreeIndexedRDD.createWithFoldLeft(rdd, partitioner, z, f)
+
 }

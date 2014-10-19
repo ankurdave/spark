@@ -93,13 +93,13 @@ private[spark] class PatriciaTreeIndexedRDDPartition[V](
 
   override def multiput(
       kvs: Iterator[(Id, V)], merge: (Id, V, V) => V): PatriciaTreeIndexedRDDPartition[V] = {
-    this.withMap(map.unionWith(iteratorToMap(kvs), merge))
+    this.withMap(map.unionWith(PatriciaTreeIndexedRDDPartition.iteratorToMap(kvs), merge))
   }
 
   override def multiput[U: ClassTag](
       kvs: Iterator[(Id, U)], insert: (Id, U) => V, merge: (Id, V, U) => V)
     : PatriciaTreeIndexedRDDPartition[V] = {
-    val other = iteratorToMap(kvs)
+    val other = PatriciaTreeIndexedRDDPartition.iteratorToMap(kvs)
     val onlyOther = (other -- map.keys).transform[V](insert)
     val both = map.intersectionWith[U, V](other, merge)
     this.withMap(map ++ onlyOther ++ both)
@@ -175,12 +175,12 @@ private[spark] class PatriciaTreeIndexedRDDPartition[V](
   }
 
   override def innerJoinKeepLeft(iter: Iterator[Product2[Id, V]]): PatriciaTreeIndexedRDDPartition[V] = {
-    this.withMap(iteratorToMap(iter).intersection(map))
+    this.withMap(PatriciaTreeIndexedRDDPartition.iteratorToMap(iter).intersection(map))
   }
 
   override def createUsingIndex[V2: ClassTag](iter: Iterator[Product2[Id, V2]])
     : PatriciaTreeIndexedRDDPartition[V2] = {
-    this.withMap(iteratorToMap(iter))
+    this.withMap(PatriciaTreeIndexedRDDPartition.iteratorToMap(iter))
   }
 
   override def aggregateUsingIndex[V2: ClassTag](
@@ -191,10 +191,6 @@ private[spark] class PatriciaTreeIndexedRDDPartition[V](
 
   override def reindex(): PatriciaTreeIndexedRDDPartition[V] = {
     this
-  }
-
-  private def iteratorToMap[V2: ClassTag](iter: Iterator[Product2[Id, V2]]): LongMap[V2] = {
-    iter.foldLeft(LongMap.empty[V2])((x, y) => x.updated(y._1, y._2))
   }
 }
 
@@ -214,6 +210,29 @@ private[spark] object PatriciaTreeIndexedRDDPartition {
     for ((k, v) <- iter) {
       hashMap.setMerge(k, v, mergeFunc)
     }
-    new PatriciaTreeIndexedRDDPartition(LongMap(hashMap.iterator.toSeq: _*))
+    new PatriciaTreeIndexedRDDPartition(iteratorToMap(hashMap.iterator))
+  }
+
+  /**
+   * Constructs an PatriciaTreeIndexedRDDPartition from an iterator of pairs, merging duplicate keys
+   * by applying a binary operator to a start value and all values with the same key. The name comes
+   * from the similar `foldLeft` operator in the Scala collections library.
+   *
+   * @param z the start value
+   * @param f the binary operator to use for merging
+   */
+  def createWithFoldLeft[A: ClassTag, B: ClassTag](
+      iter: Iterator[(Id, A)], z: => B, f: (B, A) => B): PatriciaTreeIndexedRDDPartition[B] = {
+    val hashMap = new PrimitiveKeyOpenHashMap[Id, B]
+    iter.foreach { pair =>
+      val id = pair._1
+      val a = pair._2
+      hashMap.changeValue(id, f(z, a), b => f(b, a))
+    }
+    new PatriciaTreeIndexedRDDPartition(iteratorToMap(hashMap.iterator))
+  }
+
+  protected def iteratorToMap[V: ClassTag](iter: Iterator[Product2[Id, V]]): LongMap[V] = {
+    iter.foldLeft(LongMap.empty[V])((x, y) => x.updated(y._1, y._2))
   }
 }
