@@ -57,6 +57,11 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
       Set(0L -> 1, 1L -> 1, 2L -> 2, 100L -> 1))
     assert(vp.multiput(Iterator(100L -> 1), (id, a, b) => fail()).iterator.toSet ===
       Set(0L -> 0, 1L -> 1, 2L -> 2, 100L -> 1))
+    assert(vp.multiputWithDeletion[Int](
+      Iterator(0L -> 1, 1L -> 2, 100L -> 1, 101L -> 2),
+      (id, v) => if (id % 2 == 0) Some(v + 1) else None,
+      (id, a, b) => if (id % 2 == 0) Some(a + b) else None).iterator.toSet ===
+      Set(0L -> 1, 2L -> 2, 100L -> 2))
   }
 
   test("delete") {

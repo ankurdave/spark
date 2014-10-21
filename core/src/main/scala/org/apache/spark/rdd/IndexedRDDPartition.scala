@@ -79,6 +79,15 @@ private[spark] trait IndexedRDDPartition[
   def multiput[U: ClassTag](
       kvs: Iterator[(Id, U)], insert: (Id, U) => V, merge: (Id, V, U) => V): Self[V]
 
+  /**
+   * Updates or deletes the keys in `kvs` by running `insert` if there is no existing key, or by
+   * running `merge` if there is one. Returns a new IndexedRDDPartition that reflects the
+   * modification.
+   */
+  def multiputWithDeletion[U: ClassTag](
+      kvs: Iterator[Product2[Id, U]], insert: (Id, U) => Option[V],
+      merge: (Id, V, U) => Option[V]): Self[V]
+
   /** Deletes the specified keys. Returns a new IndexedRDDPartition that reflects the deletions. */
   def delete(ks: Array[Id]): Self[V]
 

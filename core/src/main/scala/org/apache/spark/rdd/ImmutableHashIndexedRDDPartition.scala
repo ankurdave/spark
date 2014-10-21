@@ -153,6 +153,59 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
     this.withIndex(newIndex).withValues(newValues).withMask(newMask)
   }
 
+  override def multiputWithDeletion[U: ClassTag](
+      kvs: Iterator[Product2[Id, U]], insert: (Id, U) => Option[V],
+      merge: (Id, V, U) => Option[V]): ImmutableHashIndexedRDDPartition[V] = {
+    var newIndex = self.index
+    var newValues = self.values
+    var newMask = self.mask
+
+    var preMoveValues: ImmutableVector[V] = null
+    var preMoveMask: ImmutableBitSet = null
+    def grow(newSize: Int) {
+      preMoveValues = newValues
+      preMoveMask = newMask
+
+      newValues = ImmutableVector.fill(newSize)(null.asInstanceOf[V])
+      newMask = new ImmutableBitSet(newSize)
+    }
+    def move(oldPos: Int, newPos: Int) {
+      newValues = newValues.updated(newPos, preMoveValues(oldPos))
+      if (preMoveMask.get(oldPos)) newMask = newMask.set(newPos)
+    }
+
+    for (kv <- kvs) {
+      val id = kv._1
+      val otherValue = kv._2
+      newIndex = newIndex.addWithoutResize(id)
+      if ((newIndex.focus & OpenHashSet.NONEXISTENCE_MASK) != 0) {
+        // This is a new key - need to update index
+        val pos = newIndex.focus & OpenHashSet.POSITION_MASK
+        insert(id, otherValue) match {
+          case Some(valueForInsert) =>
+            newValues = newValues.updated(pos, valueForInsert)
+            newMask = newMask.set(pos)
+            newIndex = newIndex.rehashIfNeeded(grow, move)
+          case None => {} // upon learning that this is a new key, user decided not to insert it
+        }
+      } else {
+        // Existing key - just need to set value and ensure it appears in newMask
+        val pos = newIndex.focus
+        val newValueOpt =
+          if (newMask.get(pos)) merge(id, newValues(pos), otherValue) else insert(id, otherValue)
+        newValueOpt match {
+          case Some(valueForInsert) =>
+            newValues = newValues.updated(pos, valueForInsert)
+            newMask = newMask.set(pos)
+          case None => // upon seeing the existing value, user decided to delete it
+            newMask = newMask.unset(pos)
+        }
+      }
+    }
+
+    this.withIndex(newIndex).withValues(newValues).withMask(newMask)
+  }
+
   override def delete(ks: Array[Id]): ImmutableHashIndexedRDDPartition[V] = {
     var newMask = self.mask
     for (k <- ks) {

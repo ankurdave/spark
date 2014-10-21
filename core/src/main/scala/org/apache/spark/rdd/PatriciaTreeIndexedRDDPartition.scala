@@ -105,6 +105,19 @@ private[spark] class PatriciaTreeIndexedRDDPartition[V](
     this.withMap(map ++ onlyOther ++ both)
   }
 
+  override def multiputWithDeletion[U: ClassTag](
+      kvs: Iterator[Product2[Id, U]], insert: (Id, U) => Option[V],
+      merge: (Id, V, U) => Option[V]): PatriciaTreeIndexedRDDPartition[V] = {
+    val other = PatriciaTreeIndexedRDDPartition.iteratorToMap(kvs)
+    val insertionsOnlyOther = (other -- map.keys).modifyOrRemove(insert)
+    val both = map.intersectionWith[U, Option[V]](other, merge)
+    val insertionsBoth = both.modifyOrRemove((id, opt) => opt)
+
+    val insertions = insertionsOnlyOther ++ insertionsBoth
+    val deletions = both.filter(_._2.isEmpty).keys
+    this.withMap(map ++ insertions -- deletions)
+  }
+
   override def delete(ks: Array[Id]): PatriciaTreeIndexedRDDPartition[V] = {
     this.withMap(map -- ks)
   }
