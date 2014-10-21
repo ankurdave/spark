@@ -140,6 +140,9 @@ private[spark] class ImmutableLongOpenHashSet(
   }
 
   /** Return the value at the specified position. */
+  def hasValueAt(pos: Int): Boolean = pos < capacity && bitset.get(pos)
+
+  /** Return the value at the specified position. */
   def getValue(pos: Int): Long = data(pos)
 
   def iterator: Iterator[Long] = bitset.iterator.map { pos => getValue(pos) }

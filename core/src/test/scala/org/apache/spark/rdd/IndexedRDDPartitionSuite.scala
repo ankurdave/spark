@@ -73,15 +73,15 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
   test("diff") {
     val vp = create(Iterator((0L, 1), (1L, 1), (2L, 1)))
     val vp2 = vp.filter { (vid, attr) => vid <= 1 }
-    val vp3a = vp.mapValues { (vid, attr) => 2 }
-    val vp3b = create(vp3a.iterator)
-    // diff with same index
-    val diff1 = vp3a.diff(vp2)
+    val vp3 = vp.mapValues { (vid, attr) => 2 }
+    val vp4 = create(Iterator((0L, 1), (1L, 1), (2L, 1), (3L, 1)))
+    // diff with same key set
+    val diff1 = vp3.diff(vp2)
     assert(diff1(0) === 2)
     assert(diff1(1) === 2)
     assert(!diff1.isDefined(2))
-    // diff with different indexes
-    val diff2 = vp3b.diff(vp2)
+    // diff with different key sets
+    val diff2 = vp4.diff(vp2)
     assert(diff2(0) === 2)
     assert(diff2(1) === 2)
     assert(!diff2.isDefined(2))
@@ -141,7 +141,7 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
     assert(vp1.iterator.toSet === elems1.toSet)
 
     // New elements
-    val elems2 = List((0L, 2), (2L, 2), (3L, 2))
+    val elems2 = (0L to 100L).map(x => (x, 2))
     val vp2 = vp.createUsingIndex(elems2.iterator)
     assert(vp2.iterator.toSet === elems2.toSet)
   }

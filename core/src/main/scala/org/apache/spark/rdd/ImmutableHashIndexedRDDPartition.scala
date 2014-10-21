@@ -191,7 +191,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       self.mask.iterator.foreach { i =>
         val vid = self.index.getValue(i)
         val keep =
-          if (other.index.getValue(i) == vid && other.mask.get(i)) {
+          if (other.index.hasValueAt(i) && other.index.getValue(i) == vid) {
             // The indices agree on this entry
             self.values(i) != other.values(i)
           } else if (other.isDefined(vid)) {
@@ -229,7 +229,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       self.mask.iterator.foreach { selfI =>
         val vid = self.index.getValue(selfI)
         val otherI =
-          if (other.index.getValue(selfI) == vid) {
+          if (other.index.hasValueAt(selfI) && other.index.getValue(selfI) == vid) {
             if (other.mask.get(selfI)) selfI else -1
           } else {
             if (other.isDefined(vid)) other.index.getPos(vid) else -1
@@ -281,7 +281,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       other.mask.iterator.foreach { otherI =>
         val vid = other.index.getValue(otherI)
         val selfI =
-          if (self.index.getValue(otherI) == vid) {
+          if (self.index.hasValueAt(otherI) && self.index.getValue(otherI) == vid) {
             if (self.mask.get(otherI)) otherI else -1
           } else {
             if (self.isDefined(vid)) self.index.getPos(vid) else -1
@@ -327,7 +327,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       self.mask.iterator.foreach { i =>
         val vid = self.index.getValue(i)
         val otherI =
-          if (other.index.getValue(i) == vid) {
+          if (other.index.hasValueAt(i) && other.index.getValue(i) == vid) {
             if (other.mask.get(i)) i else -1
           } else {
             if (other.isDefined(vid)) other.index.getPos(vid) else -1
@@ -364,7 +364,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       self.mask.iterator.foreach { i =>
         val vid = self.index.getValue(i)
         val otherI =
-          if (other.index.getValue(i) == vid) {
+          if (other.index.hasValueAt(i) && other.index.getValue(i) == vid) {
             if (other.mask.get(i)) i else -1
           } else {
             if (other.isDefined(vid)) other.index.getPos(vid) else -1

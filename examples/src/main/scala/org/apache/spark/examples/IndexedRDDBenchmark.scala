@@ -163,23 +163,23 @@ object IndexedRDDBenchmark {
       indexed.mapValues(_ * 2).count()
     }
 
-    // time("diff - subset", trials) {
-    //   indexed.diff(subsetIndexed).count()
-    // }
-    // time("diff - no subset", trials) {
-    //   indexed.diff(incomparableIndexed).count()
-    // }
+    time("diff - subset", trials) {
+      indexed.diff(subsetIndexed).count()
+    }
+    time("diff - no subset", trials) {
+      indexed.diff(incomparableIndexed).count()
+    }
 
-    // time("fullOuterJoin - subset", trials) {
-    //   indexed.fullOuterJoin(subsetIndexed) {
-    //     (id, aOpt, bOpt) => aOpt.getOrElse(0L) + bOpt.getOrElse(0L)
-    //   }.count()
-    // }
-    // time("fullOuterJoin - no subset", trials) {
-    //   indexed.fullOuterJoin(incomparableIndexed) {
-    //     (id, aOpt, bOpt) => aOpt.getOrElse(0L) + bOpt.getOrElse(0L)
-    //   }.count()
-    // }
+    time("fullOuterJoin - subset", trials) {
+      indexed.fullOuterJoin(subsetIndexed) {
+        (id, aOpt, bOpt) => aOpt.getOrElse(0L) + bOpt.getOrElse(0L)
+      }.count()
+    }
+    time("fullOuterJoin - no subset", trials) {
+      indexed.fullOuterJoin(incomparableIndexed) {
+        (id, aOpt, bOpt) => aOpt.getOrElse(0L) + bOpt.getOrElse(0L)
+      }.count()
+    }
 
     time("join - subset, rdd", trials) {
       indexed.join(subsetRDD) { (id, a, b) => a + b }.count()
