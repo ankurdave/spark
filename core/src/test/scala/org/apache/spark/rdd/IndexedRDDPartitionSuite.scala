@@ -86,10 +86,11 @@ trait IndexedRDDPartitionSuite[P[X] <: IndexedRDDPartition[X, P]] extends FunSui
     assert(diff1(1) === 2)
     assert(!diff1.isDefined(2))
     // diff with different key sets
-    val diff2 = vp4.diff(vp2)
-    assert(diff2(0) === 2)
-    assert(diff2(1) === 2)
-    assert(!diff2.isDefined(2))
+    val diff2 = vp4.diff(vp3)
+    assert(diff2(0) === 1)
+    assert(diff2(1) === 1)
+    assert(diff2(2) === 1)
+    assert(!diff2.isDefined(3))
   }
 
   test("leftJoin") {

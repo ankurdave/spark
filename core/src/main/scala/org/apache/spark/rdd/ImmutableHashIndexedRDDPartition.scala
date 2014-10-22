@@ -244,7 +244,7 @@ private[spark] class ImmutableHashIndexedRDDPartition[V](
       self.mask.iterator.foreach { i =>
         val vid = self.index.getValue(i)
         val keep =
-          if (other.index.hasValueAt(i) && other.index.getValue(i) == vid) {
+          if (other.index.hasValueAt(i) && other.index.getValue(i) == vid && other.mask.get(i)) {
             // The indices agree on this entry
             self.values(i) != other.values(i)
           } else if (other.isDefined(vid)) {
