@@ -19,6 +19,8 @@ package org.apache.spark.examples
 
 import scala.language.higherKinds
 
+import org.apache.log4j.LogManager
+import org.apache.log4j.Level
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
@@ -58,13 +60,15 @@ object IndexedRDDBenchmark {
 
     val sc = new SparkContext(conf)
 
-    test[ImmutableHashIndexedRDDPartition, ImmutableHashIndexedRDD](
-      sc, "ImmutableHashIndexedRDD", numPartitions, elemsPerPartition, trials, miniTrials,
-      microTrials, rdd => ImmutableHashIndexedRDD(rdd))
+    LogManager.getLogger(classOf[ImmutableHashIndexedRDDPartition[_]]).setLevel(Level.ERROR)
 
     test[PatriciaTreeIndexedRDDPartition, PatriciaTreeIndexedRDD](
       sc, "PatriciaTreeIndexedRDD", numPartitions, elemsPerPartition, trials, miniTrials,
       microTrials, rdd => PatriciaTreeIndexedRDD(rdd))
+
+    test[ImmutableHashIndexedRDDPartition, ImmutableHashIndexedRDD](
+      sc, "ImmutableHashIndexedRDD", numPartitions, elemsPerPartition, trials, miniTrials,
+      microTrials, rdd => ImmutableHashIndexedRDD(rdd))
 
     sc.stop()
   }
@@ -101,9 +105,6 @@ object IndexedRDDBenchmark {
     val existingKeysSmall = Array.fill(numPartitions) {
       r.nextInt(numPartitions * elemsPerPartition).toLong
     }
-    val existingKeysLarge = Array.fill(elemsPerPartition) {
-      r.nextInt(numPartitions * elemsPerPartition).toLong
-    }
 
     val subsetRDD = sc.parallelize(0 until numPartitions, numPartitions).flatMap { p =>
       val r = new util.Random(p)
@@ -138,15 +139,9 @@ object IndexedRDDBenchmark {
     time(s"multiget ${existingKeysSmall.size}", trials) {
       indexed.multiget(existingKeysSmall)
     }
-    time(s"multiget ${existingKeysLarge.size}", trials) {
-      indexed.multiget(existingKeysLarge)
-    }
 
     time(s"delete ${existingKeysSmall.size}", trials) {
       indexed.delete(existingKeysSmall).count()
-    }
-    time(s"delete ${existingKeysLarge.size}", trials) {
-      indexed.delete(existingKeysLarge).count()
     }
 
     time("filter 0.1%", trials) {
