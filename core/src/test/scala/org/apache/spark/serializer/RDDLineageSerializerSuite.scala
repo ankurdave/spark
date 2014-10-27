@@ -17,23 +17,36 @@
 
 package org.apache.spark.rdd
 
+import scala.reflect.ClassTag
+
 import org.apache.spark._
+import org.apache.spark.SparkContext._
+import org.apache.spark.serializer.{JavaSerializer, KryoSerializer, RDDLineageSerializer}
 import org.scalatest.FunSuite
 
-class RDDLineageSerializerSuite extends FunSuite with SharedSparkContext {
+class RDDLineageSerializerSuite extends FunSuite {
 
-  def testSerialization[T: ClassTag](rdd: RDD[T]) {
+  def testSerialization[T: ClassTag](makeRDD: SparkContext => RDD[T]) {
+    // Make an RDD in one SparkContext
+    val sc1 = new SparkContext("local", "test1", new SparkConf(false))
+    val rdd = makeRDD(sc1)
     val expected = rdd.collect.toSet
+    sc1.stop()
 
+    // Deserialize it in a different SparkContext
+    val sc2 = new SparkContext("local", "test2", new SparkConf(false))
+    RDDLineageSerializer.sc = sc2
+
+    // Ensure that RDDLineageSerializer enables it to be successfully computed after deserialization
     val javaSer = new JavaSerializer(new SparkConf())
     val defaultKryoSer = new KryoSerializer(new SparkConf()
-      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer"))
     val lineageKryoSer = new KryoSerializer(new SparkConf()
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .set("spark.kryo.registrator", "org.apache.spark.serializer.RDDLineageSerializerRegistrator")
+      .set("spark.kryo.registrator", "org.apache.spark.serializer.RDDLineageSerializerRegistrator"))
 
     for (ser <- List(javaSer, defaultKryoSer, lineageKryoSer); s = ser.newInstance()) {
-      val rddSer: RDD[T] = s.deserialize(s.serialize(rdd))
+      val rddSer: RDD[T] = s.deserialize[RDD[T]](s.serialize[RDD[T]](rdd))
 
       if (ser == lineageKryoSer) {
         assert(rddSer.collect.toSet === expected)
@@ -42,9 +55,18 @@ class RDDLineageSerializerSuite extends FunSuite with SharedSparkContext {
           rddSer.collect
         }
       }
+    }
   }
 
   test("ParallelCollectionRDD") {
-    testSerialization(sc.parallelize(List(1, 2, 3)))
+    testSerialization(_.parallelize(List(1, 2, 3)))
+  }
+
+  test("MappedRDD") {
+    testSerialization(_.parallelize(List(1, 2, 3)).map(_ * 2))
+  }
+
+  test("ShuffledRDD") {
+    testSerialization(_.parallelize(List(1, 2, 3)).map(x => (x % 2, x)).reduceByKey(_ + _, 2))
   }
 }

@@ -38,8 +38,9 @@ import scala.reflect.ClassTag
 
 private[spark] class RDDLineageSerializerRegistrator extends KryoRegistrator {
   def registerClasses(kryo: Kryo) {
-    val ser = new FieldSerializer[RDD[_]](kryo, classOf[RDD[_]])
-    ser.removeField("sc")
-    kryo.register(classOf[RDD[_]], ser)
+    kryo.addDefaultSerializer(classOf[RDD[_]],
+      classOf[RDDLineageSerializer[RDD[_]]])
+    kryo.addDefaultSerializer(classOf[ShuffleDependency[_, _, _]],
+      classOf[RDDLineageSerializer[ShuffleDependency[_, _, _]]])
   }
 }
