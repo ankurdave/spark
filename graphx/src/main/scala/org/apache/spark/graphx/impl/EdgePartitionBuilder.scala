@@ -45,6 +45,7 @@ class FreshEdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD
     val data = new Array[ED](edgeArray.size)
     val index = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
     val global2local = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+    val local2global = new PrimitiveVector[VertexId]
     var vertexAttrs = Array.empty[VD]
     // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
     // adding them to the index. Also populate a map from vertex id to a sequential local offset.
@@ -63,15 +64,15 @@ class FreshEdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD
         }
         // Assign each vertex id to an offset
         localSrcIds(i) = global2local.changeValue(srcIds(i),
-          { currLocalId += 1; currLocalId }, identity)
+          { currLocalId += 1; local2global += srcIds(i); currLocalId }, identity)
         localDstIds(i) = global2local.changeValue(dstIds(i),
-          { currLocalId += 1; currLocalId }, identity)
+          { currLocalId += 1; local2global += dstIds(i); currLocalId }, identity)
         i += 1
       }
       vertexAttrs = new Array[VD](currLocalId + 1)
     }
     new EdgePartition(
-      srcIds, dstIds, localSrcIds, localDstIds, data, index, global2local, vertexAttrs)
+      srcIds, dstIds, localSrcIds, localDstIds, data, index, global2local, local2global.trim().array, vertexAttrs)
   }
 }
 
@@ -79,6 +80,7 @@ private[graphx]
 class VertexPreservingEdgePartitionBuilder[
     @specialized(Long, Int, Double) ED: ClassTag, VD: ClassTag](
     global2local: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
+    local2global: Array[VertexId],
     vertexAttrs: Array[VD],
     size: Int = 64) {
   var edges = new PrimitiveVector[Edge[ED]](size)
@@ -121,6 +123,6 @@ class VertexPreservingEdgePartitionBuilder[
     }
 
     new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index,
-      global2local, vertexAttrs)
+      global2local, local2global, vertexAttrs)
   }
 }

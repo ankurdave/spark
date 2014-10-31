@@ -226,29 +226,26 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
               val globalId = kv._1
               val localId = if (globalId == edge.srcId) edge.localSrcId else edge.localDstId
               val msg = kv._2
-              (globalId, localId, msg)
+              (localId, msg)
             }
           }
 
         // Pre-aggregate the resulting messages locally
         // Note: This doesn't allow users to send messages to arbitrary vertices.
-        val globalIds = new Array[VertexId](edgePartition.vertexAttrs.length)
         val aggregates = new Array[A](edgePartition.vertexAttrs.length)
         val bitset = new BitSet(edgePartition.vertexAttrs.length)
-        mapOutputs.foreach { triple =>
-          val globalId = triple._1
-          val localId = triple._2
-          val msg = triple._3
+        mapOutputs.foreach { kv =>
+          val localId = kv._1
+          val msg = kv._2
           if (bitset.get(localId)) {
             aggregates(localId) = reduceFunc(aggregates(localId), msg)
           } else {
-            globalIds(localId) = globalId
             aggregates(localId) = msg
             bitset.set(localId)
           }
         }
 
-        bitset.iterator.map { localId => (globalIds(localId), aggregates(localId)) }
+        bitset.iterator.map { localId => (edgePartition.local2global(localId), aggregates(localId)) }
     }).setName("GraphImpl.mapReduceTriplets - preAgg")
 
     // do the final reduction reusing the index map
