@@ -23,7 +23,7 @@ import org.apache.spark.HashPartitioner
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
 import org.apache.spark.storage.StorageLevel
-
+import org.apache.spark.util.collection.BitSet
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.impl.GraphImpl._
 import org.apache.spark.graphx.util.BytecodeUtils
@@ -220,11 +220,35 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
         }
 
         // Scan edges and run the map function
-        val mapOutputs = edgePartition.upgradeIterator(edgeIter, mapUsesSrcAttr, mapUsesDstAttr)
-          .flatMap(edge => mapFunc(edge).map(msg =>
-            (if (msg._1 == edge.srcId) edge.localSrcId else edge.localDstId, msg._2)))
+        val mapOutputs =
+          edgePartition.upgradeIterator(edgeIter, mapUsesSrcAttr, mapUsesDstAttr).flatMap {
+            edge => mapFunc(edge).map { kv =>
+              val globalId = kv._1
+              val localId = if (globalId == edge.srcId) edge.localSrcId else edge.localDstId
+              val msg = kv._2
+              (globalId, localId, msg)
+            }
+          }
+
+        // Pre-aggregate the resulting messages locally
         // Note: This doesn't allow users to send messages to arbitrary vertices.
-        edgePartition.vertices.aggregateLocalIdsUsingIndex(mapOutputs, reduceFunc).iterator
+        val globalIds = new Array[VertexId](edgePartition.vertexAttrs.length)
+        val aggregates = new Array[A](edgePartition.vertexAttrs.length)
+        val bitset = new BitSet(edgePartition.vertexAttrs.length)
+        mapOutputs.foreach { triple =>
+          val globalId = triple._1
+          val localId = triple._2
+          val msg = triple._3
+          if (bitset.get(localId)) {
+            aggregates(localId) = reduceFunc(aggregates(localId), msg)
+          } else {
+            globalIds(localId) = globalId
+            aggregates(localId) = msg
+            bitset.set(localId)
+          }
+        }
+
+        bitset.iterator.map { localId => (globalIds(localId), aggregates(localId)) }
     }).setName("GraphImpl.mapReduceTriplets - preAgg")
 
     // do the final reduction reusing the index map

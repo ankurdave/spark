@@ -44,11 +44,14 @@ class FreshEdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD
     val localDstIds = new Array[Int](edgeArray.size)
     val data = new Array[ED](edgeArray.size)
     val index = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+    val global2local = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+    var vertexAttrs = Array.empty[VD]
     // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
-    // adding them to the index
+    // adding them to the index. Also populate a map from vertex id to a sequential local offset.
     if (edgeArray.length > 0) {
       index.update(srcIds(0), 0)
       var currSrcId: VertexId = srcIds(0)
+      var currLocalId = -1
       var i = 0
       while (i < edgeArray.size) {
         srcIds(i) = edgeArray(i).srcId
@@ -58,32 +61,26 @@ class FreshEdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD
           currSrcId = edgeArray(i).srcId
           index.update(currSrcId, i)
         }
+        // Assign each vertex id to an offset
+        localSrcIds(i) = global2local.changeValue(srcIds(i),
+          { currLocalId += 1; currLocalId }, identity)
+        localDstIds(i) = global2local.changeValue(dstIds(i),
+          { currLocalId += 1; currLocalId }, identity)
         i += 1
       }
+      vertexAttrs = new Array[VD](currLocalId + 1)
     }
-
-    // Create and populate a VertexPartition with vids from the edges, but no attributes
-    val vidsIter = srcIds.iterator ++ dstIds.iterator
-    val vertexIds = new OpenHashSet[VertexId]
-    vidsIter.foreach(vid => vertexIds.add(vid))
-    val vertices = new VertexPartition(
-      vertexIds, new Array[VD](vertexIds.capacity), vertexIds.getBitSet)
-
-    // Populate the local id columns using the VertexPartition
-    var i = 0
-    while (i < edgeArray.size) {
-      localSrcIds(i) = vertexIds.getPos(edgeArray(i).srcId)
-      localDstIds(i) = vertexIds.getPos(edgeArray(i).dstId)
-      i += 1
-    }
-
-    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index, vertices)
+    new EdgePartition(
+      srcIds, dstIds, localSrcIds, localDstIds, data, index, global2local, vertexAttrs)
   }
 }
 
 private[graphx]
-class VertexPreservingEdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: ClassTag](
-    vertices: VertexPartition[VD], size: Int = 64) {
+class VertexPreservingEdgePartitionBuilder[
+    @specialized(Long, Int, Double) ED: ClassTag, VD: ClassTag](
+    global2local: GraphXPrimitiveKeyOpenHashMap[VertexId, Int],
+    vertexAttrs: Array[VD],
+    size: Int = 64) {
   var edges = new PrimitiveVector[Edge[ED]](size)
 
   /** Add a new edge to the partition. */
@@ -123,6 +120,7 @@ class VertexPreservingEdgePartitionBuilder[@specialized(Long, Int, Double) ED: C
       }
     }
 
-    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index, vertices)
+    new EdgePartition(srcIds, dstIds, localSrcIds, localDstIds, data, index,
+      global2local, vertexAttrs)
   }
 }

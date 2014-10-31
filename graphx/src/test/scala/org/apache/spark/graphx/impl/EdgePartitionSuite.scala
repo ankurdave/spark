@@ -139,7 +139,8 @@ class EdgePartitionSuite extends FunSuite {
       assert(aSer.dstIds.toList === a.dstIds.toList)
       assert(aSer.data.toList === a.data.toList)
       assert(aSer.index != null)
-      assert(aSer.vertices.iterator.toSet === a.vertices.iterator.toSet)
+      assert(aSer.global2local != null)
+      assert(aSer.vertexAttrs.toList === a.vertexAttrs.toList)
     }
   }
 }
