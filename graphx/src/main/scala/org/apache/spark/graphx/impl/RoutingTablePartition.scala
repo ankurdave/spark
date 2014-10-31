@@ -47,7 +47,7 @@ object RoutingTableMessageRDDFunctions {
   }
 }
 
-private[graphx]
+//private[graphx]
 object RoutingTablePartition {
   /**
    * A message from an edge partition to a vertex specifying the position in which the edge

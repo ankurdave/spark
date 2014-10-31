@@ -34,9 +34,9 @@ case class Edge[@specialized(Char, Int, Boolean, Byte, Long, Float, Double) ED] 
   extends Serializable {
 
   /** An index into the local VertexPartition for the source vertex entry. */
-  private[graphx] var localSrcId: Int = -1
+  /*private[graphx]*/ var localSrcId: Int = -1
   /** An index into the local VertexPartition for the destination vertex entry. */
-  private[graphx] var localDstId: Int = -1
+  /*private[graphx]*/ var localDstId: Int = -1
 
   /**
    * Given one vertex in the edge return the other vertex.

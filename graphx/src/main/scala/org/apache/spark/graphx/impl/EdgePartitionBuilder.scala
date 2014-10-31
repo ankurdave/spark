@@ -25,7 +25,7 @@ import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector}
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 
-private[graphx]
+//private[graphx]
 class FreshEdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: ClassTag](
     size: Int = 64) {
   var edges = new PrimitiveVector[Edge[ED]](size)
