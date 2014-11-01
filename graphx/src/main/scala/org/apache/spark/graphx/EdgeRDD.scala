@@ -32,7 +32,7 @@ import org.apache.spark.graphx.impl.EdgePartitionBuilder
  * edge to provide the triplet view. Shipping of the vertex attributes is managed by
  * `impl.ReplicatedVertexView`.
  */
-class EdgeRDD[@specialized ED: ClassTag, VD: ClassTag](
+class EdgeRDD[ED: ClassTag, VD: ClassTag](
     val partitionsRDD: RDD[(PartitionID, EdgePartition[ED, VD])],
     val targetStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
   extends RDD[Edge[ED]](partitionsRDD.context, List(new OneToOneDependency(partitionsRDD))) {
