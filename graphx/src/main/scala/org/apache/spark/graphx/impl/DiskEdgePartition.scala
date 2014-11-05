@@ -18,29 +18,24 @@
 package org.apache.spark.graphx.impl
 
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.util.UUID
 
 import scala.reflect.ClassTag
-import scala.util.Sorting
-import org.apache.spark.SparkEnv
-
-import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector, ExternalSorter}
-
-import org.apache.spark.graphx._
-import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
-import java.io.File
-import java.io.FileInputStream
-import java.io.ObjectInputStream
-
 import scala.reflect.{classTag, ClassTag}
+import scala.util.Sorting
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
-import org.apache.spark.util.collection.BitSet
+import org.apache.spark.serializer.SerializationStream
 import org.apache.spark.util.Utils
+import org.apache.spark.util.collection.BitSet
+import org.apache.spark.util.collection.ExternalSorter
+import org.apache.spark.util.collection.PrimitiveVector
 
 /**
  * A collection of edges stored on disk, along with referenced vertex attributes and an optional
@@ -331,6 +326,32 @@ object DiskEdgePartition {
   }
 }
 
+private object DiskEdgePartitionBuilder {
+  def withEdgeFiles[A](
+      f: (File, ObjectOutputStream, File, SerializationStream) => A): A = {
+    val localDirPath =
+      if (SparkEnv.get != null) Utils.getLocalDir(SparkEnv.get.conf)
+      else System.getProperty("java.io.tmpdir")
+    val localDir = new File(localDirPath)
+    val prefix = "spark-EdgePartition-" + UUID.randomUUID.toString + "-"
+
+    val localIdFile = new File(localDir, prefix + "localIds")
+    val localIdStream = new ObjectOutputStream(new FileOutputStream(localIdFile))
+
+    val attrFile = new File(localDir, prefix + "attrs")
+    val attrFileStream = new FileOutputStream(attrFile)
+    val attrSerStream = SparkEnv.get.serializer.newInstance().serializeStream(attrFileStream)
+
+    val result = f(localIdFile, localIdStream, attrFile, attrSerStream)
+
+    localIdStream.close()
+    attrSerStream.close()
+    attrFileStream.close()
+
+    result
+  }
+}
+
 private class DiskEdgePartitionBuilder[ED: ClassTag, VD: ClassTag]
     extends EdgePartitionBuilder[ED, VD] {
 
@@ -346,53 +367,42 @@ private class DiskEdgePartitionBuilder[ED: ClassTag, VD: ClassTag]
   }
 
   override def toEdgePartition: EdgePartition[ED, VD] = {
-    val basePath = Utils.getLocalDir(SparkEnv.get.conf) +
-      "/spark-EdgePartition-" + UUID.randomUUID.toString + "-"
-
-    val localIdFile = new File(basePath + "localIds")
-    val localIdStream = new ObjectOutputStream(new FileOutputStream(localIdFile))
-
-    val attrFile = new File(basePath + "attrs")
-    val attrFileStream = new FileOutputStream(attrFile)
-    val attrSerStream = SparkEnv.get.serializer.newInstance().serializeStream(attrFileStream)
-
-    val index = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
-    val global2local = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
-    val local2global = new PrimitiveVector[VertexId]
-    // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
-    // adding them to the index. Also populate a map from vertex id to a sequential local offset.
-    var initialized = false
-    var currSrcId: VertexId = -1
-    var currLocalId = -1
-    var i = 0
-    edgeSorter.iterator.foreach { kv =>
-      val srcId = kv._1._1
-      val dstId = kv._1._2
-      val attr = kv._2
-      // Update the mapping between global vid and local vid
-      val localSrcId = global2local.changeValue(srcId,
-        { currLocalId += 1; local2global += srcId; currLocalId }, identity)
-      val localDstId = global2local.changeValue(dstId,
-        { currLocalId += 1; local2global += dstId; currLocalId }, identity)
-      // Write the edge to disk
-      localIdStream.writeInt(localSrcId)
-      localIdStream.writeInt(localDstId)
-      attrSerStream.writeObject(attr)
-      // Update the clustered index on source vertex id
-      if (srcId != currSrcId || !initialized) {
-        currSrcId = srcId
-        index.update(currSrcId, i)
+    DiskEdgePartitionBuilder.withEdgeFiles { (localIdFile, localIdStream, attrFile, attrStream) =>
+      val index = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+      val global2local = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+      val local2global = new PrimitiveVector[VertexId]
+      // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
+      // adding them to the index. Also populate a map from vertex id to a sequential local offset.
+      var initialized = false
+      var currSrcId: VertexId = -1
+      var currLocalId = -1
+      var i = 0
+      edgeSorter.iterator.foreach { kv =>
+        val srcId = kv._1._1
+        val dstId = kv._1._2
+        val attr = kv._2
+        // Update the mapping between global vid and local vid
+        val localSrcId = global2local.changeValue(srcId,
+          { currLocalId += 1; local2global += srcId; currLocalId }, identity)
+        val localDstId = global2local.changeValue(dstId,
+          { currLocalId += 1; local2global += dstId; currLocalId }, identity)
+        // Write the edge to disk
+        localIdStream.writeInt(localSrcId)
+        localIdStream.writeInt(localDstId)
+        attrStream.writeObject(attr)
+        // Update the clustered index on source vertex id
+        if (srcId != currSrcId || !initialized) {
+          currSrcId = srcId
+          index.update(currSrcId, i)
+        }
+        i += 1
       }
-      i += 1
-    }
-    edgeSorter.stop()
-    localIdStream.close()
-    attrSerStream.close()
-    attrFileStream.close()
+      edgeSorter.stop()
 
-    val vertexAttrs = new Array[VD](currLocalId + 1)
-    new DiskEdgePartition(localIdFile, attrFile, size, index, global2local,
-      local2global.trim().array, vertexAttrs)
+      val vertexAttrs = new Array[VD](currLocalId + 1)
+      new DiskEdgePartition(localIdFile, attrFile, size, index, global2local,
+        local2global.trim().array, vertexAttrs)
+    }
   }
 }
 
@@ -412,48 +422,37 @@ private class ExistingDiskEdgePartitionBuilder[ED: ClassTag, VD: ClassTag](
   }
 
   def toEdgePartition: EdgePartition[ED, VD] = {
-    val basePath = Utils.getLocalDir(SparkEnv.get.conf) +
-      "/spark-EdgePartition-" + UUID.randomUUID.toString + "-"
+    DiskEdgePartitionBuilder.withEdgeFiles { (localIdFile, localIdStream, attrFile, attrStream) =>
+      val index = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
+      // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
+      // adding them to the index
+      var initialized = false
+      var currSrcId: VertexId = -1
+      var i = 0
+      edgeSorter.iterator.foreach { kv =>
+        val srcId = kv._1._1
+        val dstId = kv._1._2
+        val localSrcId = kv._2._1
+        val localDstId = kv._2._2
+        val attr = kv._2._3
 
-    val localIdFile = new File(basePath + "localIds")
-    val localIdStream = new ObjectOutputStream(new FileOutputStream(localIdFile))
+        // Write the edge to disk
+        localIdStream.writeInt(localSrcId)
+        localIdStream.writeInt(localDstId)
+        attrStream.writeObject(attr)
 
-    val attrFile = new File(basePath + "attrs")
-    val attrFileStream = new FileOutputStream(attrFile)
-    val attrSerStream = SparkEnv.get.serializer.newInstance().serializeStream(attrFileStream)
-
-    val index = new GraphXPrimitiveKeyOpenHashMap[VertexId, Int]
-    // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
-    // adding them to the index
-    var initialized = false
-    var currSrcId: VertexId = -1
-    var i = 0
-    edgeSorter.iterator.foreach { kv =>
-      val srcId = kv._1._1
-      val dstId = kv._1._2
-      val localSrcId = kv._2._1
-      val localDstId = kv._2._2
-      val attr = kv._2._3
-
-      // Write the edge to disk
-      localIdStream.writeInt(localSrcId)
-      localIdStream.writeInt(localDstId)
-      attrSerStream.writeObject(attr)
-
-      // Update the clustered index on source vertex id
-      if (srcId != currSrcId || !initialized) {
-        currSrcId = srcId
-        index.update(currSrcId, i)
+        // Update the clustered index on source vertex id
+        if (srcId != currSrcId || !initialized) {
+          currSrcId = srcId
+          index.update(currSrcId, i)
+        }
+        i += 1
       }
-      i += 1
-    }
-    edgeSorter.stop()
-    localIdStream.close()
-    attrSerStream.close()
-    attrFileStream.close()
+      edgeSorter.stop()
 
-    new DiskEdgePartition(localIdFile, attrFile, size, index, global2local, local2global,
-      vertexAttrs, activeSet)
+      new DiskEdgePartition(localIdFile, attrFile, size, index, global2local, local2global,
+        vertexAttrs, activeSet)
+    }
   }
 }
 
