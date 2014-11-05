@@ -40,6 +40,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.BitSet
+import org.apache.spark.util.Utils
 
 /**
  * A collection of edges stored on disk, along with referenced vertex attributes and an optional
@@ -345,8 +346,8 @@ private class DiskEdgePartitionBuilder[ED: ClassTag, VD: ClassTag]
   }
 
   override def toEdgePartition: EdgePartition[ED, VD] = {
-    val basePath = System.getProperty("java.io.tmpdir") +
-      "spark-EdgePartition-" + UUID.randomUUID.toString + "-"
+    val basePath = Utils.getLocalDir(SparkEnv.get.conf) +
+      "/spark-EdgePartition-" + UUID.randomUUID.toString + "-"
 
     val localIdFile = new File(basePath + "localIds")
     val localIdStream = new ObjectOutputStream(new FileOutputStream(localIdFile))
@@ -411,8 +412,8 @@ private class ExistingDiskEdgePartitionBuilder[ED: ClassTag, VD: ClassTag](
   }
 
   def toEdgePartition: EdgePartition[ED, VD] = {
-    val basePath = System.getProperty("java.io.tmpdir") +
-      "spark-EdgePartition-" + UUID.randomUUID.toString + "-"
+    val basePath = Utils.getLocalDir(SparkEnv.get.conf) +
+      "/spark-EdgePartition-" + UUID.randomUUID.toString + "-"
 
     val localIdFile = new File(basePath + "localIds")
     val localIdStream = new ObjectOutputStream(new FileOutputStream(localIdFile))
