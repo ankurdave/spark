@@ -17,35 +17,19 @@
 
 package org.apache.spark.graphx.impl
 
-import java.io.File
-import java.io.FileOutputStream
-import java.io.ObjectOutputStream
-import java.util.UUID
-
 import scala.reflect.ClassTag
-import scala.util.Sorting
-import org.apache.spark.SparkEnv
 
-import org.apache.spark.util.collection.{BitSet, OpenHashSet, PrimitiveVector, ExternalSorter}
+import org.scalatest.FunSuite
 
 import org.apache.spark.graphx._
-import org.apache.spark.graphx.util.collection.GraphXPrimitiveKeyOpenHashMap
 
-private[graphx] trait EdgePartitionBuilder[ED, VD] {
-  /** Add a new edge to the partition. */
-  def add(src: VertexId, dst: VertexId, d: ED): Unit
-  def toEdgePartition: EdgePartition[ED, VD]
-}
+class DiskEdgePartitionSuite extends EdgePartitionSuite with SharedSparkContext {
 
-private[graphx] object EdgePartitionBuilder {
-  private[impl] val pairLexicographicOrdering = new Ordering[(VertexId, VertexId)] {
-    override def compare(a: (VertexId, VertexId), b: (VertexId, VertexId)): Int = {
-      if (a._1 == b._1) {
-        if (a._2 == b._2) 0
-        else if (a._2 < b._2) -1
-        else 1
-      } else if (a._1 < b._1) -1
-      else 1
-    }
+  override def makeEdgePartition[A: ClassTag](
+      xs: Iterable[Edge[A]]): EdgePartition[A, Int] = {
+    val builder = DiskEdgePartition.newBuilder[A, Int]
+    for (e <- xs) { builder.add(e.srcId, e.dstId, e.attr) }
+    builder.toEdgePartition
   }
+
 }

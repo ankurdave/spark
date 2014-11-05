@@ -24,7 +24,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
 import org.apache.spark.graphx.impl.EdgePartition
-import org.apache.spark.graphx.impl.EdgePartitionBuilder
 
 /**
  * `EdgeRDD[ED, VD]` extends `RDD[Edge[ED]]` by storing the edges in columnar format on each
@@ -168,14 +167,27 @@ class EdgeRDD[@specialized ED: ClassTag, VD: ClassTag](
 
 object EdgeRDD {
   /**
-   * Creates an EdgeRDD from a set of edges.
+   * Creates an EdgeRDD from a set of edges, storing them in memory.
    *
    * @tparam ED the edge attribute type
    * @tparam VD the type of the vertex attributes that may be joined with the returned EdgeRDD
    */
   def fromEdges[ED: ClassTag, VD: ClassTag](edges: RDD[Edge[ED]]): EdgeRDD[ED, VD] = {
+    fromEdges[ED, VD](edges, false)
+  }
+
+  /**
+   * Creates an EdgeRDD from a set of edges.
+   *
+   * @tparam ED the edge attribute type
+   * @tparam VD the type of the vertex attributes that may be joined with the returned EdgeRDD
+   *
+   * @param onDisk if true, edges will be stored on disk; if false, in memory
+   */
+  def fromEdges[ED: ClassTag, VD: ClassTag](
+      edges: RDD[Edge[ED]], onDisk: Boolean): EdgeRDD[ED, VD] = {
     val edgePartitions = edges.mapPartitionsWithIndex { (pid, iter) =>
-      val builder = new EdgePartitionBuilder[ED, VD]
+      val builder = EdgePartition.newBuilder[ED, VD](onDisk)
       iter.foreach { e =>
         builder.add(e.srcId, e.dstId, e.attr)
       }

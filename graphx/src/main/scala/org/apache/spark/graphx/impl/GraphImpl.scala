@@ -27,7 +27,6 @@ import org.apache.spark.graphx._
 import org.apache.spark.graphx.impl.GraphImpl._
 import org.apache.spark.graphx.util.BytecodeUtils
 
-
 /**
  * An implementation of [[org.apache.spark.graphx.Graph]] to support computation on graphs.
  *
@@ -77,6 +76,13 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
 
   override def partitionBy(
       partitionStrategy: PartitionStrategy, numPartitions: Int): Graph[VD, ED] = {
+    partitionBy(partitionStrategy, edges.partitions.size, false)
+  }
+
+  override def partitionBy(
+      partitionStrategy: PartitionStrategy,
+      numPartitions: Int,
+      edgesOnDisk: Boolean): Graph[VD, ED] = {
     val edTag = classTag[ED]
     val vdTag = classTag[VD]
     val newEdges = edges.withPartitionsRDD(edges.map { e =>
@@ -85,7 +91,7 @@ class GraphImpl[VD: ClassTag, ED: ClassTag] protected (
     }
       .partitionBy(new HashPartitioner(numPartitions))
       .mapPartitionsWithIndex( { (pid, iter) =>
-        val builder = new EdgePartitionBuilder[ED, VD]()(edTag, vdTag)
+        val builder = EdgePartition.newBuilder[ED, VD](edgesOnDisk)(edTag, vdTag)
         iter.foreach { message =>
           val data = message._2
           builder.add(data._1, data._2, data._3)
@@ -290,8 +296,10 @@ object GraphImpl {
       edges: RDD[Edge[ED]],
       defaultVertexAttr: VD,
       edgeStorageLevel: StorageLevel,
-      vertexStorageLevel: StorageLevel): GraphImpl[VD, ED] = {
-    fromEdgeRDD(EdgeRDD.fromEdges(edges), defaultVertexAttr, edgeStorageLevel, vertexStorageLevel)
+      vertexStorageLevel: StorageLevel,
+      edgesOnDisk: Boolean): GraphImpl[VD, ED] = {
+    fromEdgeRDD(EdgeRDD.fromEdges(edges, edgesOnDisk), defaultVertexAttr,
+      edgeStorageLevel, vertexStorageLevel)
   }
 
   /** Create a graph from EdgePartitions, setting referenced vertices to `defaultVertexAttr`. */
@@ -300,8 +308,8 @@ object GraphImpl {
       defaultVertexAttr: VD,
       edgeStorageLevel: StorageLevel,
       vertexStorageLevel: StorageLevel): GraphImpl[VD, ED] = {
-    fromEdgeRDD(EdgeRDD.fromEdgePartitions(edgePartitions), defaultVertexAttr, edgeStorageLevel,
-      vertexStorageLevel)
+    fromEdgeRDD(EdgeRDD.fromEdgePartitions(edgePartitions), defaultVertexAttr,
+      edgeStorageLevel, vertexStorageLevel)
   }
 
   /** Create a graph from vertices and edges, setting missing vertices to `defaultVertexAttr`. */
@@ -310,8 +318,9 @@ object GraphImpl {
       edges: RDD[Edge[ED]],
       defaultVertexAttr: VD,
       edgeStorageLevel: StorageLevel,
-      vertexStorageLevel: StorageLevel): GraphImpl[VD, ED] = {
-    val edgeRDD = EdgeRDD.fromEdges(edges)(classTag[ED], classTag[VD])
+      vertexStorageLevel: StorageLevel,
+      edgesOnDisk: Boolean): GraphImpl[VD, ED] = {
+    val edgeRDD = EdgeRDD.fromEdges(edges, edgesOnDisk)(classTag[ED], classTag[VD])
       .withTargetStorageLevel(edgeStorageLevel).cache()
     val vertexRDD = VertexRDD(vertices, edgeRDD, defaultVertexAttr)
       .withTargetStorageLevel(vertexStorageLevel).cache()

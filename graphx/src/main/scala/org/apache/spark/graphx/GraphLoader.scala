@@ -19,7 +19,8 @@ package org.apache.spark.graphx
 
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{Logging, SparkContext}
-import org.apache.spark.graphx.impl.{EdgePartitionBuilder, GraphImpl}
+import org.apache.spark.graphx.impl.GraphImpl
+import org.apache.spark.graphx.impl.EdgePartition
 
 /**
  * Provides utilities for loading [[Graph]]s from files.
@@ -58,7 +59,8 @@ object GraphLoader extends Logging {
       canonicalOrientation: Boolean = false,
       minEdgePartitions: Int = 1,
       edgeStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
-      vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY)
+      vertexStorageLevel: StorageLevel = StorageLevel.MEMORY_ONLY,
+      edgesOnDisk: Boolean = false)
     : Graph[Int, Int] =
   {
     val startTime = System.currentTimeMillis
@@ -66,7 +68,8 @@ object GraphLoader extends Logging {
     // Parse the edge data table directly into edge partitions
     val lines = sc.textFile(path, minEdgePartitions).coalesce(minEdgePartitions)
     val edges = lines.mapPartitionsWithIndex { (pid, iter) =>
-      val builder = new EdgePartitionBuilder[Int, Int]
+      val builder = EdgePartition.newBuilder[Int, Int](edgesOnDisk)
+
       iter.foreach { line =>
         if (!line.isEmpty && line(0) != '#') {
           val lineArray = line.split("\\s+")
