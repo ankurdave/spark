@@ -43,7 +43,9 @@ class EdgeRDDImpl[ED: ClassTag, VD: ClassTag] private[graphx] (
   /**
    * If `partitionsRDD` already has a partitioner, use it. Otherwise assume that the
    * [[PartitionID]]s in `partitionsRDD` correspond to the actual partitions and create a new
-   * partitioner that allows co-partitioning with `partitionsRDD`.
+   * partitioner that allows co-partitioning with `partitionsRDD`. The new partitioner will function
+   * correctly because `Object.hashCode` for an integer returns the integer, so partition ids will
+   * be sent to the correct partition.
    */
   override val partitioner =
     partitionsRDD.partitioner.orElse(Some(new HashPartitioner(partitionsRDD.partitions.size)))
