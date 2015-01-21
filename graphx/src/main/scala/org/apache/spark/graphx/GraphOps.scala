@@ -206,27 +206,18 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
     val edTag = classTag[ED]
     val vdTag = classTag[VD]
     // Canonicalize the edge directions and then repartition
-    val canonicalEdges = graph.edges.withPartitionsRDD(graph.edges.map { e =>
-      var srcId = e.srcId
-      var dstId = e.dstId
-      if (e.srcId > e.dstId) {
-        srcId = e.dstId
-        dstId = e.srcId
+    val canonicalEdgePartition2D = new PartitionStrategy {
+      def getPartition(src: VertexId, dst: VertexId, numParts: PartitionID) = {
+        var srcId = src
+        var dstId = dst
+        if (src > dst) {
+          srcId = dst
+          dstId = src
+        }
+        PartitionStrategy.EdgePartition2D.getPartition(srcId, dstId, numParts)
       }
-      val part = PartitionStrategy.EdgePartition2D.getPartition(srcId, dstId, numPartitions)
-      (part, (srcId, dstId, e.attr))
-    }.partitionBy(new HashPartitioner(numPartitions)).mapPartitionsWithIndex( { (pid, iter) =>
-      val builder = new EdgePartitionBuilder[ED, VD]()(edTag, vdTag)
-      iter.foreach { message =>
-        val data = message._2
-        builder.add(data._1, data._2, data._3)
-      }
-      val edgePartition = builder.toEdgePartition
-      Iterator((pid, edgePartition))
-    }, preservesPartitioning = true)).cache()
-    // Build a new graph reusing the old vertex rdd and group the edges
-    GraphImpl.fromExistingRDDs(graph.vertices.withEdges(canonicalEdges), canonicalEdges)
-      .groupEdges(merge)
+    }
+    graph.partitionBy(canonicalEdgePartition2D).groupEdges(merge)
   }
 
   /**
