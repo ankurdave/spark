@@ -17,17 +17,17 @@
 
 package org.apache.spark.graphx.impl
 
+import scala.collection.immutable.TreeMap
 import scala.reflect.ClassTag
 import scala.util.Sorting
 
+import org.apache.spark.graphx._
 import org.apache.spark.rdd.IndexedRDDPartition
 import org.apache.spark.util.collection.ImmutableLongOpenHashSet
 import org.apache.spark.util.collection.ImmutableVector
 import org.apache.spark.util.collection.OpenHashSet
 import org.apache.spark.util.collection.PrimitiveKeyOpenHashMap
 import org.apache.spark.util.collection.PrimitiveVector
-
-import org.apache.spark.graphx._
 
 private[graphx]
 class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: ClassTag](
@@ -45,12 +45,12 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
     val srcIds = new Array[VertexId](edgeArray.size)
     val dstIds = new Array[VertexId](edgeArray.size)
     val data = new Array[ED](edgeArray.size)
-    val index = new PrimitiveKeyOpenHashMap[VertexId, Int]
+    var index = new TreeMap[VertexId, Int]
     // Copy edges into columnar structures, tracking the beginnings of source vertex id clusters and
     // adding them to the index
     if (edgeArray.length > 0) {
-      index.update(srcIds(0), 0)
-      var currSrcId: VertexId = srcIds(0)
+      index = index.updated(edgeArray(0).srcId, 0)
+      var currSrcId: VertexId = edgeArray(0).srcId
       var i = 0
       while (i < edgeArray.size) {
         srcIds(i) = edgeArray(i).srcId
@@ -58,7 +58,7 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
         data(i) = edgeArray(i).attr
         if (edgeArray(i).srcId != currSrcId) {
           currSrcId = edgeArray(i).srcId
-          index.update(currSrcId, i)
+          index = index.updated(currSrcId, i)
         }
         i += 1
       }
@@ -73,6 +73,9 @@ class EdgePartitionBuilder[@specialized(Long, Int, Double) ED: ClassTag, VD: Cla
       ImmutableVector.fromArray(Array.fill[VD](vertexIds.capacity)(null.asInstanceOf[VD])),
       vertexIds.getBitSet.toImmutableBitSet)
 
-    new EdgePartition(srcIds, dstIds, data, index, vertices)
+    new EdgePartition(
+      ImmutableVector.fromArray(srcIds),
+      ImmutableVector.fromArray(dstIds),
+      ImmutableVector.fromArray(data), index, vertices)
   }
 }

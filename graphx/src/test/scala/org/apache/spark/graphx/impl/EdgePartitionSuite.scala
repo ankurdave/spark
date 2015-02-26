@@ -135,9 +135,9 @@ class EdgePartitionSuite extends FunSuite {
 
     for (ser <- List(javaSer, kryoSer); s = ser.newInstance()) {
       val aSer: EdgePartition[Int, Int] = s.deserialize(s.serialize(a))
-      assert(aSer.srcIds.toList === a.srcIds.toList)
-      assert(aSer.dstIds.toList === a.dstIds.toList)
-      assert(aSer.data.toList === a.data.toList)
+      assert(aSer.srcIds.iterator.toList === a.srcIds.iterator.toList)
+      assert(aSer.dstIds.iterator.toList === a.dstIds.iterator.toList)
+      assert(aSer.data.iterator.toList === a.data.iterator.toList)
       assert(aSer.index != null)
       assert(aSer.vertices.iterator.toSet === a.vertices.iterator.toSet)
     }

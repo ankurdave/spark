@@ -17,12 +17,13 @@
 
 package org.apache.spark.graphx.impl
 
+import scala.collection.immutable.TreeMap
 import scala.reflect.{classTag, ClassTag}
 
-import org.apache.spark.rdd.IndexedRDDPartition
-import org.apache.spark.util.collection.PrimitiveKeyOpenHashMap
-
 import org.apache.spark.graphx._
+import org.apache.spark.rdd.IndexedRDDPartition
+import org.apache.spark.util.collection.ImmutableVector
+import org.apache.spark.util.collection.PrimitiveKeyOpenHashMap
 
 /**
  * A collection of edges stored in columnar format, along with any vertex attributes referenced. The
@@ -44,16 +45,16 @@ import org.apache.spark.graphx._
 private[graphx]
 class EdgePartition[
     @specialized(Char, Int, Boolean, Byte, Long, Float, Double) ED: ClassTag, VD: ClassTag](
-    val srcIds: Array[VertexId] = null,
-    val dstIds: Array[VertexId] = null,
-    val data: Array[ED] = null,
-    val index: PrimitiveKeyOpenHashMap[VertexId, Int] = null,
+    val srcIds: ImmutableVector[VertexId] = null,
+    val dstIds: ImmutableVector[VertexId] = null,
+    val data: ImmutableVector[ED] = null,
+    val index: TreeMap[VertexId, Int] = null,
     val vertices: IndexedRDDPartition[VD] = null,
     val activeSet: Option[VertexSet] = None
   ) extends Serializable {
 
   /** Return a new `EdgePartition` with the specified edge data. */
-  def withData[ED2: ClassTag](data_ : Array[ED2]): EdgePartition[ED2, VD] = {
+  def withData[ED2: ClassTag](data_ : ImmutableVector[ED2]): EdgePartition[ED2, VD] = {
     new EdgePartition(srcIds, dstIds, data_, index, vertices, activeSet)
   }
 
@@ -125,7 +126,7 @@ class EdgePartition[
       newData(i) = f(edge)
       i += 1
     }
-    this.withData(newData)
+    this.withData(ImmutableVector.fromArray(newData))
   }
 
   /**
@@ -149,7 +150,7 @@ class EdgePartition[
       i += 1
     }
     assert(newData.size == i)
-    this.withData(newData)
+    this.withData(ImmutableVector.fromArray(newData))
   }
 
   /**
