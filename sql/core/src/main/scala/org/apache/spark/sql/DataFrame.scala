@@ -34,6 +34,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.optimizer.KeyHintCollapsing
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.plans.{Inner, JoinType}
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, ScalaReflection, SqlParser}
@@ -666,6 +667,33 @@ class DataFrame private[sql](
    * @since 1.3.0
    */
   def as(alias: Symbol): DataFrame = as(alias.name)
+
+  /**
+   * :: Experimental ::
+   * Declares that the values of the given column are unique.
+   */
+  @Experimental
+  def uniqueKey(col: String): DataFrame =
+    KeyHintCollapsing(KeyHint(List(UniqueKey(UnresolvedAttribute(col))), logicalPlan))
+
+  /**
+   * :: Experimental ::
+   * Declares that the values of the given column reference a unique column from another
+   * [[DataFrame]]. The referenced column must be declared as a unique key within the referenced
+   * [[DataFrame]]:
+   * {{{
+   *   val department = dept.uniqueKey("id")
+   *   employee.foreignKey("departmentId", department, "id")
+   * }}}
+   */
+  @Experimental
+  def foreignKey(col: String, referencedDF: DataFrame, referencedCol: String): DataFrame =
+    KeyHintCollapsing(
+      KeyHint(List(ForeignKey(
+        UnresolvedAttribute(col),
+        referencedDF.logicalPlan,
+        UnresolvedAttribute(referencedCol))),
+      logicalPlan))
 
   /**
    * Selects a set of column based expressions.
